@@ -1,24 +1,36 @@
 'use strict';
 const registryState = { query: '', clientId: '', status: '', sort: 'deadline', direction: 'asc', grouped: true };
 function registry() {
-  main.innerHTML = heading('Реєстр грантових заявок', 'Заявки, клієнти й терміни — в одному реєстрі.') + `
-    <div class="notice">М1 · вигадані дані, лише перегляд. Збереження та інтеграції вимкнені.</div>
-    <div class="registry-actions" aria-label="Майбутні можливості">
-      <button disabled>+ Ввести заявку</button><button disabled>Оновити з Google Sheets</button><button disabled>Імпорт Excel / CSV</button>
-      <span class="muted">Доступні на наступних етапах</span>
+  main.classList.add('registry-page');
+  main.innerHTML = `
+    <div class="registry-toolbar">
+      <button class="button" disabled title="Додавання та збереження з’являться на наступних етапах">+ Додати заявку</button>
+      <select id="application-client" aria-label="Клієнт"><option value="">Усі клієнти</option>${data.clients.map(c => `<option value="${c.id}">${escapeHtml(c.legal_name)}</option>`).join('')}</select>
+      <button id="filter-toggle" class="button secondary" aria-expanded="false" aria-controls="application-filters">🔍 Пошук і фільтри<span id="active-filters"></span></button>
+      <label class="check-label"><input id="application-group" type="checkbox"> Групувати за клієнтами</label>
     </div>
-    <div class="filters registry-filters">
+    <div id="application-filters" class="registry-filter-panel" hidden>
       <label>Пошук заявок<input id="application-query" type="search" placeholder="Заявка, клієнт, грант, донор…"></label>
-      <label>Клієнт<select id="application-client"><option value="">Усі клієнти</option>${data.clients.map(c => `<option value="${c.id}">${escapeHtml(c.legal_name)}</option>`).join('')}</select></label>
       <label>Статус заявки<select id="application-status"><option value="">Усі статуси</option>${options(CrmRegistry.statuses)}</select></label>
+      <button id="application-reset" class="button secondary">Скинути фільтри</button>
     </div>
-    <div class="registry-tools"><label class="check-label"><input id="application-group" type="checkbox"> Групувати за клієнтами</label><button id="application-reset" class="button secondary">Скинути фільтри</button><span id="application-count" role="status"></span></div>
-    <div class="legend" aria-label="Позначення статусів"><span><i class="submitted"></i>Подано · очікуємо рішення</span><span><i class="rejected"></i>Відхилено</span><span><i></i>У роботі</span></div>
-    <p class="muted table-hint" id="table-help">Натисніть заголовок стовпця для сортування. На вузькому екрані прокручуйте таблицю горизонтально.</p>
-    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption>Демонстраційні грантові заявки · суми в EUR</caption><thead><tr>${[['title','Заявка'],['client','Клієнт / досьє'],['grant','Грант / донор'],['deadline','Дедлайн'],['amount','Сума, EUR'],['status','Статус']].map(([key, title]) => `<th scope="col" data-column="${key}" aria-sort="none"><button data-sort="${key}">${title}<span aria-hidden="true"></span></button></th>`).join('')}</tr></thead><tbody id="application-rows"></tbody></table></div>`;
+    <div class="registry-title"><h1>Реєстр грантових заявок</h1><span id="application-count" role="status"></span></div>
+    <p class="sr-only" id="table-help">Натисніть заголовок стовпця для сортування. На вузькому екрані прокручуйте таблицю горизонтально.</p>
+    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption class="sr-only">Демонстраційні грантові заявки · суми в EUR</caption><thead><tr>${[['title','Заявка'],['client','Клієнт / досьє'],['grant','Грант / донор'],['deadline','Дедлайн'],['amount','Сума, EUR'],['status','Статус']].map(([key, title]) => `<th scope="col" data-column="${key}" aria-sort="none"><button data-sort="${key}">${title}<span aria-hidden="true"></span></button></th>`).join('')}</tr></thead><tbody id="application-rows"></tbody></table></div><p class="registry-note">М1 · вигадані дані · лише перегляд · суми в EUR. Додавання, імпорт і збереження недоступні.</p>`;
   const query = document.querySelector('#application-query'), client = document.querySelector('#application-client'), status = document.querySelector('#application-status'), group = document.querySelector('#application-group');
   query.value = registryState.query; client.value = registryState.clientId; status.value = registryState.status; group.checked = registryState.grouped;
+  const toggle = document.querySelector('#filter-toggle'), panel = document.querySelector('#application-filters');
+  toggle.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    toggle.setAttribute('aria-expanded', String(!panel.hidden));
+    if (!panel.hidden) query.focus();
+  });
+  panel.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); }
+  });
   const update = () => {
+    const active = Number(Boolean(registryState.query)) + Number(Boolean(registryState.status));
+    document.querySelector('#active-filters').textContent = active ? ' (' + active + ')' : '';
     const rows = CrmRegistry.select(data.applications, data.clients, registryState);
     document.querySelector('#application-count').textContent = `Показано ${rows.length} із ${data.applications.length}`;
     main.querySelectorAll('[data-column]').forEach(th => {

@@ -43,6 +43,7 @@ function grants() {
   main.innerHTML = heading('Грантові можливості', 'Вигадані конкурси для демонстрації структури каталогу') + `<div class="cards">${data.grants.map(g => `<article class="card"><span class="badge">${g.sector}</span><h2 style="margin-top:18px">${g.title}</h2><p>${g.donor}</p><strong>${g.amount == null ? 'Суму не вказано' : new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(g.amount)}</strong><p>Заявники: ${g.applicants}</p><div class="meta"><span>Дедлайн: ${date(g.deadline)}</span><span>Europe/Kyiv</span></div><div class="notice">Демонстрація · першоджерело відсутнє, актуальність не перевірена.</div></article>`).join('')}</div>`;
 }
 function render() {
+  main.classList.remove('registry-page');
   const [route, id] = location.hash.slice(1).split('/');
   document.querySelectorAll('nav a').forEach(a => { if (a.hash === '#' + (route || 'home')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   ({ home, clients, profile: () => profile(id), tasks, grants }[route || 'home'] || (() => { main.innerHTML = heading('Сторінку не знайдено', 'Скористайтеся основною навігацією.'); }))();
