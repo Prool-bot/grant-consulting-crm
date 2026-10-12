@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.clasp.json
+.clasprc.json
+.clasprc*.json
+*.log
+backups/
+exports/
+private/
+.DS_Store
