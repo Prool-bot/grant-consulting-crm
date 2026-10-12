@@ -11,7 +11,7 @@
 | `tasks` | id, title, description, client_id, grant_id, application_id, due_at, timezone, priority, status, assigned_to, reminder_scheme, calendar_event_id, calendar_sync_status, completed_at, created_at, updated_at | Ідемпотентність синхронізації |
 | `grants` | id, title, donor, official_url, geography_json, applicant_types_json, sectors_json, amount_min, amount_max, currency, deadline_at, deadline_timezone, round, status, verified_at, created_at, updated_at | Без дублів за source/round |
 | `matches` | id, client_id, grant_id, rules_score, reasons_json, blockers_json, status, analyzed_at, ai_analysis_id | Результат правил без ШІ |
-| `applications` | id, client_id, grant_id, title, status, submission_at, award_amount, currency, donor_reply_at, notes, created_at, updated_at | Один клієнт → кілька заявок |
+| `applications` | id, application_no, client_id, grant_id, title, status, requested_amount, submission_at, award_amount, currency, donor_reply_at, notes, source_type, source_record_key, source_updated_at, imported_at, created_at, updated_at | Один клієнт → кілька заявок; client_id обов’язковий; імпорт — майбутній етап |
 | `documents` | id, client_id, application_id, drive_file_id, drive_folder_id, doc_type, doc_status, expiry_at, uploaded_at, checked_at, note | Вміст файлів — лише Google Drive |
 | `services_invoices` | id, client_id, service_name, agreement_drive_file_id, currency, amount, prepayment, paid, due_at, status, note | Управлінський фіноблік |
 | `calendar_links` | id, entity_type, entity_id, calendar_id, event_id, payload_hash, last_synced_at, sync_status, error_message | Один зв'язок на сутність; unique(entity_type,entity_id) |
@@ -23,6 +23,9 @@
 `CRM_Клієнти/0001_Назва/01_Реєстрація; 02_Політики; 03_Досвід; 04_Фінанси; 05_Заявки; 06_Договори; 07_Листування/`. Структуру створювати лише для активованого досьє. Назва папки може змінюватися, але `drive_folder_id` незмінний.
 
 ### Валідація
+- Реєстр зв’язує заявку з досьє через client_id; назва клієнта не є ключем. Дедлайн/донор беруться зі зв’язаного гранту. У М1 назви гранту, донор і дедлайн денормалізовані лише для демонстрації; `amount` означає запитувану суму, всі приклади в EUR.
+- Майбутній імпорт: унікальна пара (source_type, source_record_key), пріоритет стабільного UUID; номер рядка Sheets не є ключем. Для файлів без ключів показувати кандидати на дублікати за client_id + grant_id + раундом/назвою заявки, вимагати рішення при неоднозначності. Повторний імпорт не створює нових заявок. Конфлікти версій не перезаписуються автоматично.
+- requested_amount відрізняється від award_amount; порожня сума залишається невідомою. Різні валюти не порівнювати як одну суму без окремого погодженого правила.
 - `client_no` — послідовний, але **не** використовується для зв'язків; `LockService` при видачі.
 - `edrpou_optional` — довільний рядок з окремою перевіркою формату для української юрособи, не обов'язковий для фізособи.
 - `official_url` — лише HTTPS, збереження нормалізованого URL для перевірки дублів.
