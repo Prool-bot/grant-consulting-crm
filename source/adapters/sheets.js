@@ -1,0 +1,185 @@
+(function(root) {
+'use strict';
+const Core = typeof module !== 'undefined' ? require('../server/core') : root.CrmCore;
+const Domain = typeof module !== 'undefined' ? require('../shared/domain') : root.CrmDomain;
+const copy = value => JSON.parse(JSON.stringify(value));
+const TABLES = ['clients','client_profiles','contacts','interactions','grants','applications'];
+const HEADER = ['id','client_id','version','data_json'];
+const PROFILE = ['sectors','geography','funding_needs','grants_experience','target_groups','prior_donors','capacity_note','competencies','portfolio','eligibility_notes'];
+const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[1-5][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
+const empty = () => ({version:2,revision:0,sequence:0,clients:[],applications:[],contacts:[],interactions:[],receipts:[]});
+function validate(state) {
+  new Core.LocalRepository().validate(state);
+  if(!Number.isSafeInteger(state.revision) || !Number.isSafeInteger(state.sequence) || state.revision < 0 || state.sequence < 0 || !Array.isArray(state.receipts)) throw Error('Пошкоджено метадані бази.');
+  for(const table of ['clients','applications','contacts','interactions']) {
+    for(const row of state[table]) {
+      if(!UUID.test(row.id) || !Number.isInteger(row.version) || row.version < 1) throw Error('Некоректний UUID або версія запису.');
+      if(table==='contacts' && (!row.full_name?.trim() || (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)))) throw Error('Некоректний контакт.');
+      if(table==='interactions' && (!row.summary?.trim() || !Domain.validDate(row.happened_at))) throw Error('Некоректна взаємодія.');
+      if(row.contact_id && !state.contacts.some(c=>c.id===row.contact_id && c.client_id===row.client_id)) throw Error('Порушено зв’язок контакту.');
+    }
+  }
+  if(new Set(state.receipts.map(r=>r.id)).size!==state.receipts.length || state.receipts.some(r=>!UUID.test(r.id)||typeof r.fingerprint!=='string')) throw Error('Пошкоджено журнал повторів.');
+}
+function normalize(state) {
+  const tables = Object.fromEntries(TABLES.map(t=>[t,[]]));
+  for(const original of state.clients) {
+    const client=copy(original), profile={id:client.id,client_id:client.id,version:client.version};
+    for(const key of PROFILE) if(Object.hasOwn(client,key)) { profile[key]=client[key];delete client[key]; }
+    tables.clients.push(client);tables.client_profiles.push(profile);
+  }
+  for(const original of state.applications) {
+    const app=copy(original);
+    // Один грантовий запис на заявку: однакові назви не об’єднують різні конкурси.
+    tables.grants.push({id:app.id,version:app.version,title:app.grant,donor:app.donor,deadline_at:app.deadline||''});
+    app.grant_id=app.id;app.requested_amount=app.amount??null;
+    delete app.grant;delete app.donor;delete app.deadline;delete app.amount;
+    tables.applications.push(app);
+  }
+  tables.contacts=copy(state.contacts);tables.interactions=copy(state.interactions);
+  return tables;
+}
+class SheetsRepository {
+  constructor({spreadsheet,lock,flush,hash,expectedRevision=null,request=null}) {
+    Object.assign(this,{spreadsheet,lock,flush,hash,expectedRevision,request});
+  }
+  locked(action) {
+    if(!this.lock.tryLock(10000)) throw Error('База зайнята. Повторіть запит із тим самим ідентифікатором.');
+    try { return action(); } finally { this.lock.releaseLock(); }
+  }
+  sheet(name) { const sheet=this.spreadsheet.getSheetByName(name);if(!sheet)throw Error('Базу не налаштовано.');return sheet; }
+  cell(name) { return this.sheet(name).getRange(2,1); }
+  control() {
+    const raw=this.cell('_crm_control').getValue();
+    if(!raw) return {schema:1,committed:null,pending:null};
+    const value=JSON.parse(raw);
+    if(value.schema!==1 || !Object.hasOwn(value,'committed') || !Object.hasOwn(value,'pending'))throw Error('Невідома схема бази.');
+    return value;
+  }
+  setup() {
+    return this.locked(()=>{
+      const headers={...Object.fromEntries(TABLES.map(t=>[t,HEADER])),_crm_control:['control_json'],_crm_journal:['chunk']};
+      // Спершу перевіряємо всі наявні заголовки, не перезаписуємо сторонні дані.
+      for(const [name,header] of Object.entries(headers)) {
+        const sheet=this.spreadsheet.getSheetByName(name);
+        if(sheet && sheet.getLastRow()>0 && JSON.stringify(sheet.getRange(1,1,1,header.length).getValues()[0])!==JSON.stringify(header)) throw Error('Несумісна структура аркушів. Потрібна окрема порожня база.');
+      }
+      for(const [name,header] of Object.entries(headers)) {
+        const sheet=this.spreadsheet.getSheetByName(name)||this.spreadsheet.insertSheet(name);
+        if(!sheet.getLastRow()) sheet.getRange(1,1,1,header.length).setValues([header]);
+      }
+      this.flush();
+      const control=this.control();
+      if(!control.committed&&!control.pending) {
+        if(TABLES.some(t=>this.sheet(t).getLastRow()>1)) throw Error('Немає метаданих для наявних записів. Автоматичне очищення заборонено.');
+        // Без покажчика дозволені лише осиротілі початкові знімки після збою setup.
+        const journal=this.sheet('_crm_journal'), count=journal.getLastRow()-1;
+        if(count && journal.getRange(2,1,count,1).getValues().some(([value])=>value!=='j:'+JSON.stringify(empty())))throw Error('Втрачено метадані журналу. Автоматичне очищення заборонено.');
+        this.commit(empty(),control);
+      } else this.recover(control);
+      return {schema:1,tables:TABLES.slice()};
+    });
+  }
+  writeControl(control) { this.cell('_crm_control').setValue(JSON.stringify(control));this.flush(); }
+  journal(pointer) {
+    if(!pointer || !Number.isInteger(pointer.start)||pointer.start<2||!Number.isInteger(pointer.count)||pointer.count<1||pointer.count>10000) throw Error('Пошкоджено покажчик журналу.');
+    const chunks=this.sheet('_crm_journal').getRange(pointer.start,1,pointer.count,1).getValues();
+    if(chunks.some(([v])=>typeof v!=='string'||!v.startsWith('j:')))throw Error('Пошкоджено журнал відновлення.');
+    const raw=chunks.map(([v])=>v.slice(2)).join('');
+    if(this.hash(raw)!==pointer.hash)throw Error('Контрольна сума журналу не збігається.');
+    const state=JSON.parse(raw);validate(state);return state;
+  }
+  project(state) {
+    const tables=normalize(state);
+    for(const name of TABLES) {
+      const sheet=this.sheet(name), rows=tables[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
+      if(rows.some(r=>r[3].length>45000))throw Error('Запис перевищує безпечний розмір комірки.');
+      const previous=sheet.getLastRow()-1;
+      if(rows.length+1>sheet.getMaxRows())sheet.insertRowsAfter(sheet.getMaxRows(),rows.length+1-sheet.getMaxRows());
+      if(rows.length) sheet.getRange(2,1,rows.length,HEADER.length).setValues(rows);
+      if(previous>rows.length)sheet.getRange(rows.length+2,1,previous-rows.length,HEADER.length).clearContent();
+    }
+    this.flush();
+  }
+  recover(control=this.control()) {
+    if(control.pending) {
+      const next=this.journal(control.pending);
+      this.project(next);
+      this.writeControl({schema:1,committed:control.pending,pending:null});
+      return next;
+    }
+    if(!control.committed)throw Error('Базу не налаштовано.');
+    const state=this.journal(control.committed);
+    // Ручне редагування Sheets не є API CRM: відмовляємо, не стираючи змін власника.
+    const expected=normalize(state);
+    for(const name of TABLES) {
+      const sheet=this.sheet(name), count=sheet.getLastRow()-1;
+      if(JSON.stringify(sheet.getRange(1,1,1,HEADER.length).getValues()[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
+      const rows=count?sheet.getRange(2,1,count,HEADER.length).getValues():[];
+      const wanted=expected[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
+      if(JSON.stringify(rows)!==JSON.stringify(wanted))throw Error('Аркуші змінено поза CRM. Збережіть приватну копію та виконайте перевірене відновлення.');
+    }
+    return state;
+  }
+  commit(next,control) {
+    validate(next);
+    // Обмеження перевіряються ДО публікації pending, щоб відновлення завжди могло завершитися.
+    for(const rows of Object.values(normalize(next))) if(rows.some(r=>JSON.stringify(r).length>45000))throw Error('Запис перевищує безпечний розмір комірки.');
+    const raw=JSON.stringify(next);
+    if(raw.length>2000000)throw Error('Перевищено ліміт розміру бази М2.5. Потрібне погоджене розширення адаптера.');
+    const chunks=raw.match(/[\s\S]{1,15000}/gu).map(v=>['j:'+v]);
+    const sheet=this.sheet('_crm_journal'), start=sheet.getLastRow()+1;
+    if(start+chunks.length>100000)throw Error('Журнал заповнено. Потрібне погоджене обслуговування та резервна копія.');
+    if(start+chunks.length-1>sheet.getMaxRows())sheet.insertRowsAfter(sheet.getMaxRows(),start+chunks.length-1-sheet.getMaxRows());
+    sheet.getRange(start,1,chunks.length,1).setValues(chunks);this.flush();
+    const pending={start,count:chunks.length,hash:this.hash(raw)};
+    // Журнал не очищається: попередня підтверджена версія залишається доступною.
+    this.journal(pending);
+    this.writeControl({schema:1,committed:control.committed,pending});
+    this.project(next);
+    this.writeControl({schema:1,committed:pending,pending:null});
+  }
+  read() { return this.locked(()=>copy(this.recover())); }
+  transaction(change) {
+    return this.locked(()=>{
+      const current=this.recover(), request=this.request;
+      if(request) {
+        if(!UUID.test(request.id)||typeof request.fingerprint!=='string')throw Error('Потрібен UUID запиту.');
+        const receipt=current.receipts.find(r=>r.id===request.id);
+        if(receipt) {if(receipt.fingerprint!==request.fingerprint)throw Error('Ідентифікатор запиту вже використано для іншої дії.');return copy(receipt.result);}
+      }
+      if(this.expectedRevision!==null && current.revision!==this.expectedRevision)throw Error('Конфлікт ревізії. Оновіть дані перед новою зміною.');
+      const next=copy(current), result=copy(change(next)??null);
+      next.revision=current.revision+1;
+      // М2 не версіонував незмінні додані контакти та взаємодії.
+      for(const table of ['contacts','interactions'])for(const row of next[table])if(!row.version)row.version=1;
+      if(request)next.receipts.push({id:request.id,fingerprint:request.fingerprint,result});
+      this.commit(next,this.control());return result;
+    });
+  }
+  snapshot() { return JSON.stringify(this.read()); }
+  repairProjection(expectedRevision,confirmed=false) {
+    if(confirmed!==true)throw Error('Спочатку збережіть приватну копію ручних змін і підтвердьте відновлення.');
+    return this.locked(()=>{
+      const control=this.control();
+      if(control.pending)throw Error('Спочатку завершіть очікувану операцію повторним читанням.');
+      const state=this.journal(control.committed);
+      if(state.revision!==expectedRevision)throw Error('Конфлікт ревізії.');
+      for(const name of TABLES)if(JSON.stringify(this.sheet(name).getRange(1,1,1,HEADER.length).getValues()[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
+      this.project(state);
+      return {revision:state.revision};
+    });
+  }
+  restore(snapshot) {
+    const restored=JSON.parse(snapshot);validate(restored);
+    return this.transaction(state=>{
+      const {revision,sequence,receipts}=state;
+      // Старі форми не повинні збігтися з версіями після відновлення.
+      for(const table of ['clients','applications','contacts','interactions'])for(const row of restored[table])row.version=Math.max(row.version,state[table].find(r=>r.id===row.id)?.version||0)+1;
+      Object.assign(state,restored,{revision,sequence:Math.max(sequence,restored.sequence),receipts});
+    });
+  }
+}
+const api={SheetsRepository,normalize,validate,TABLES};
+if(typeof module!=='undefined')module.exports=api;else root.CrmSheets=api;
+})(globalThis);
