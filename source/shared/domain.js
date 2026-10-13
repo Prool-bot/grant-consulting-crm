@@ -39,7 +39,7 @@
   function searchClients(clients, { query = '', type = '', status = '' } = {}) {
     const needle = query.trim().toLocaleLowerCase('uk');
     return clients.filter(c => (!type || c.type === type) && (!status || c.status === status) &&
-      [c.legal_name, c.short_name, c.location, ...(c.contacts || []), ...(c.sectors || [])].join(' ').toLocaleLowerCase('uk').includes(needle));
+      [c.client_no, c.legal_name, c.short_name, c.location, c.geography, ...(c.contacts || []), ...(c.sectors || [])].join(' ').toLocaleLowerCase('uk').includes(needle));
   }
   function transitionTask(task, status, now = new Date().toISOString()) {
     if (!Object.hasOwn(taskStatuses, task.status) || !Object.hasOwn(taskStatuses, status)) throw new Error('Невідомий статус завдання.');

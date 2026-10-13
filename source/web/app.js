@@ -1,5 +1,5 @@
 'use strict';
-const D = CrmDomain, data = CrmDemo, main = document.querySelector('main');
+const D = CrmDomain, data = globalThis.CRM_REMOTE ? {clients:[],applications:[],contacts:[],interactions:[]} : CrmDemo, main = document.querySelector('main');
 document.querySelector('.skip').addEventListener('click', event => { event.preventDefault(); main.focus(); main.scrollIntoView(); });
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const date = value => new Intl.DateTimeFormat('uk-UA', { day: 'numeric', month: 'long', timeZone: 'Europe/Kyiv' }).format(new Date(value + 'T12:00:00+03:00'));
@@ -15,11 +15,19 @@ function tasks() {
 function grants() {
   main.innerHTML = heading('Грантові можливості', 'Вигадані конкурси для демонстрації структури каталогу') + `<div class="cards">${data.grants.map(g => `<article class="card"><span class="badge">${g.sector}</span><h2 style="margin-top:18px">${g.title}</h2><p>${g.donor}</p><strong>${g.amount == null ? 'Суму не вказано' : new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(g.amount)}</strong><p>Заявники: ${g.applicants}</p><div class="meta"><span>Дедлайн: ${date(g.deadline)}</span><span>Europe/Kyiv</span></div><div class="notice">Демонстрація · першоджерело відсутнє, актуальність не перевірена.</div></article>`).join('')}</div>`;
 }
+let ready=false;
 function render() {
+  if(!ready)return;
   main.classList.remove('registry-page');
   const [route, id, clientId] = location.hash.slice(1).split('/');
-  document.querySelectorAll('nav a').forEach(a => { if (a.hash === '#' + (route || 'home')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  ({ home, clients: showClients, profile: () => showProfile(id), application: () => application(id, clientId), tasks, grants }[route || 'home'] || (() => { main.innerHTML = heading('Сторінку не знайдено', 'Скористайтеся основною навігацією.'); }))();
+  document.querySelectorAll('nav a').forEach(a => { if (a.hash === '#' + (route === 'profile' ? 'clients' : route || 'home')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  ({ home, clients: showClients, profile: () => showProfile(id), application: () => application(id, clientId), ...(globalThis.CRM_REMOTE?{}:{tasks, grants}) }[route || 'home'] || (() => { main.innerHTML = heading('Сторінку не знайдено', 'Скористайтеся основною навігацією.'); }))();
   document.title = `${main.querySelector('h1').textContent} — Каталог клієнтів`;
 }
-window.addEventListener('hashchange', () => { render(); main.focus(); }); initializeCrm().then(render).catch(() => { main.innerHTML = '<h1>Локальне сховище недоступне</h1><p>Дані не перезаписано. Перевірте доступ браузера до сховища або збережіть його копію перед відновленням. Запускайте через локальний HTTP-сервер у сучасному браузері.</p>'; });
+window.addEventListener('hashchange', () => { render(); main.focus(); });
+async function startCrm(){
+ main.innerHTML='<h1>Завантаження CRM…</h1>';
+ try{await initializeCrm();ready=true;render();}
+ catch{main.innerHTML='<h1>CRM недоступна</h1><p>Перевірте підключення, вхід власника та налаштування сховища.</p><button id="retry-load">Повторити</button>';main.querySelector('button').onclick=startCrm;}
+}
+startCrm();

@@ -17,11 +17,12 @@ test('Apps Script: зібраний сервер проходить налашт
     SpreadsheetApp:{openById:id=>{assert.equal(id,'synthetic-only');opens++;return book;},flush:()=>book.flush()},
     LockService:{getScriptLock:()=>book.lock()},
     Utilities:{getUuid:randomUUID,DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},computeDigest:(algorithm,text)=>[...createHash(algorithm).update(text).digest()]},
-    HtmlService:{createHtmlOutput:html=>html}
+    HtmlService:{createHtmlOutput:html=>html,createHtmlOutputFromFile:name=>({setTitle(){return this;},addMetaTag(){return name;}})}
   };
   vm.createContext(context);
   vm.runInContext(server,context);
   vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../source/server/Code.gs'),'utf8'),context);
+  assert.equal(context.doGet(),'Index');
   assert.equal(context.setupCrm_().ok,true);assert.equal(context.setupCrm_().ok,true);
   const request={requestId:randomUUID(),revision:0,action:'saveClient',args:{input:{legal_name:'Демо: RPC',type:'ngo',status:'active'}}};
   const created=context.crmMutate(request);assert.equal(created.ok,true);assert.equal(context.crmMutate(request).value.id,created.value.id);

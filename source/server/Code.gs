@@ -48,7 +48,7 @@ function repairCrm_(expectedRevision,confirmed) {
 function doGet() {
   try {
     CrmGateway.authorize(PropertiesService.getScriptProperties(),Session);
-    return HtmlService.createHtmlOutput('<html lang="uk"><meta charset="utf-8"><h1>Сервер М2.5 підготовлено</h1><p>Підключення інтерфейсу до серверного API та публікація потребують окремого погодження. Локальна CRM М2 працює окремо.</p></html>');
+    return HtmlService.createHtmlOutputFromFile('Index').setTitle('Каталог клієнтів').addMetaTag('viewport','width=device-width, initial-scale=1');
   } catch(error) {
     return HtmlService.createHtmlOutput('<html lang="uk"><meta charset="utf-8"><h1>Доступ закрито</h1></html>');
   }

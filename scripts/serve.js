@@ -14,6 +14,7 @@ files['/registry-domain.js'] = ['registry-domain.js', 'text/javascript'];
 files['/registry.js'] = ['registry.js', 'text/javascript'];
 files['/core.js'] = ['core.js', 'text/javascript'];
 files['/m2.js'] = ['m2.js', 'text/javascript'];
+files['/remote.js'] = ['remote.js', 'text/javascript'];
 const port = Number(process.env.PORT || 4173);
 server.listen(port, '127.0.0.1', () => console.log(`Прототип: http://127.0.0.1:${port} · завершення: Ctrl+C`));
 server.on('error', () => { console.error('Не вдалося запустити локальний сервер. Перевірте порт 4173.'); process.exitCode = 1; });
