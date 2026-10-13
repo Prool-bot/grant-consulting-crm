@@ -69,7 +69,7 @@ function showProfile(id,initialTab='Огляд') {
     if(c)showProfile(saved.id,tab);else location.hash='profile/'+saved.id;
    });
   }else if(tab==='Заявки'){
-   content.innerHTML='<h2>Заявки</h2>'+(crm.data().applications.filter(a=>a.client_id===id).map(a=>'<div class="row"><a href="#application/'+encodeURIComponent(a.id)+'">'+escapeHtml(a.title)+'</a><span>'+escapeHtml(CrmCore.statuses[a.status])+(a.archived_at?' · Архів':'')+'</span></div>').join('')||'<p>Заявок ще немає.</p>');
+   showClientApplications(content,id);
   }else{
    const contacts=tab==='Контакти',table=contacts?'contacts':'interactions';
    const fields=contacts?[['full_name','Ім’я *'],['role','Роль'],['email','Електронна адреса'],['phone','Телефон'],['preferred_channel','Бажаний канал']]:[['happened_at','Дата і час із поясом *'],['summary','Підсумок *'],['next_step','Наступний крок']];
@@ -84,11 +84,35 @@ function showProfile(id,initialTab='Огляд') {
  if(c){main.querySelector('#archive').onclick=async()=>{try{await localWrite(()=>crm.clientAction(id,c.status==='archived'?'restore':'archive'));refreshData();showProfile(id);}catch(e){alert(e.message);}};main.querySelector('#delete-client').onclick=async()=>{if(await confirmAction('Видалити клієнта? Його заявки також буде приховано з реєстру. Дані та зв’язки залишаться у сховищі.'))try{await localWrite(()=>crm.clientAction(id,'delete',true));refreshData();location.hash='clients';}catch(e){alert(e.message);}};}
  show(initialTab);
 }
-function application(id,clientId) {
+function applicationDate(value) {
+ return value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat('uk-UA',{timeZone:'Europe/Kyiv'}).format(new Date(value)) : 'Не вказано';
+}
+function applicationAmount(value,currency) {
+ return (value == null ? 'Не вказано' : new Intl.NumberFormat('uk-UA',{maximumFractionDigits:2}).format(value))+' '+(currency||'');
+}
+function showClientApplications(content,id) {
+ const rows=crm.data().applications.filter(a=>a.client_id===id&&!a.deleted_at);
+ const state={clientId:id,sort:'application_no',direction:'asc'};
+ const columns=[['application_no','Номер заявки'],['title','Назва'],['grant','Грант / донор'],['submission_at','Дата подання'],['deadline','Дедлайн'],['amount','Запитувана сума / валюта'],['status','Статус']];
+ content.innerHTML='<div class="actions"><h2>Заявки</h2><a class="button" href="#application/new/'+encodeURIComponent(id)+'">+ Додати заявку</a></div><div class="application-counts" aria-label="Кількість заявок за статусами">'+Object.entries(CrmCore.statuses).map(([key,label])=>'<span>'+escapeHtml(label)+': <strong>'+rows.filter(a=>a.status===key).length+'</strong></span>').join('')+'</div><p class="registry-note">Усього: '+rows.length+'. Архівні враховано; видалені не показуються. Дати: Europe/Kyiv. Суми сортуються в межах валюти без конвертації.</p><div class="table-scroll" role="region" aria-label="Заявки клієнта" tabindex="0"><table class="registry-table client-applications"><caption class="sr-only">Заявки клієнта. Натисніть назву для перегляду, заголовок — для сортування.</caption><thead><tr>'+columns.map(([key,label])=>'<th scope="col" data-column="'+key+'" aria-sort="none"><button data-sort="'+key+'">'+label+'<span aria-hidden="true"></span></button></th>').join('')+'</tr></thead><tbody></tbody></table></div>';
+ const update=()=>{
+  content.querySelectorAll('[data-column]').forEach(th=>{const selected=th.dataset.column===state.sort;th.setAttribute('aria-sort',selected?(state.direction==='asc'?'ascending':'descending'):'none');th.querySelector('span').textContent=selected?(state.direction==='asc'?' ↑':' ↓'):' ↕';});
+  content.querySelector('tbody').innerHTML=CrmRegistry.select(rows,data.clients,state).map(a=>'<tr class="application-row '+(Object.hasOwn(CrmCore.statuses,a.status)?a.status:'')+'"><td>'+escapeHtml(a.application_no)+'</td><td><a href="#application/'+encodeURIComponent(a.id)+'">'+escapeHtml(a.title)+'</a></td><td>'+escapeHtml(a.grant)+'<small>'+escapeHtml(a.donor)+'</small></td><td>'+applicationDate(a.submission_at)+'</td><td>'+applicationDate(a.deadline)+'</td><td class="numeric">'+escapeHtml(applicationAmount(a.amount,a.currency))+'</td><td>'+escapeHtml(CrmCore.statuses[a.status])+(a.archived_at?'<small>Архів</small>':'')+'</td></tr>').join('')||'<tr><td colspan="7" class="empty">Заявок ще немає.</td></tr>';
+ };
+ content.querySelectorAll('[data-sort]').forEach(b=>b.onclick=()=>{state.direction=state.sort===b.dataset.sort&&state.direction==='asc'?'desc':'asc';state.sort=b.dataset.sort;update();});
+ update();
+}
+function application(id,clientId,editing=false) {
  const a=crm.data().applications.find(a=>a.id===id);if(id&&id!=='new'&&!a){main.innerHTML=heading('Заявку не знайдено','Оберіть заявку в реєстрі.');return;}
+ if(a&&!editing){
+  const client=data.clients.find(c=>c.id===a.client_id);
+  const fields=[['Номер заявки',a.application_no],['Назва',a.title],['Клієнт',client?.legal_name],['Грант',a.grant],['Донор',a.donor],['Дата подання',applicationDate(a.submission_at)],['Дедлайн',applicationDate(a.deadline)],['Запитувана сума',applicationAmount(a.amount,a.currency)],['Присуджена сума',applicationAmount(a.award_amount,a.currency)],['Статус',CrmCore.statuses[a.status]],['Архів',a.archived_at?'Так':'Ні'],['Дата відповіді',applicationDate(a.donor_reply_at)],['Примітки / результат',a.notes]];
+  main.innerHTML=heading('Перегляд заявки','Дати: Europe/Kyiv. Суми в початковій валюті.')+'<section class="panel"><div class="actions"><button id="edit-application" class="button">Редагувати</button><a href="#profile/'+encodeURIComponent(a.client_id)+'">До клієнта</a><a href="#home">До реєстру</a></div><dl class="profile-details">'+fields.map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+escapeHtml(value??'Не вказано')+'</dd></div>').join('')+'</dl></section>';
+  main.querySelector('#edit-application').onclick=()=>application(id,clientId,true);return;
+ }
  main.innerHTML=heading(a?'Редагування заявки':'Нова заявка','Дати: ISO 8601 із часовим поясом; порожня сума означає невідому.')+`<section class="panel"><form><div class="form-grid">${selectField('client_id','Клієнт *',Object.fromEntries(data.clients.map(c=>[c.id,c.legal_name])),a?.client_id||clientId)}${selectField('status','Статус',CrmCore.statuses,a?.status||'preparation')}${field('title','Назва заявки *',a?.title)}${field('grant','Грант *',a?.grant)}${field('donor','Донор *',a?.donor)}${field('deadline','Дедлайн (ISO із поясом)',a?.deadline)}${field('amount','Запитувана сума',a?.amount)}${field('award_amount','Присуджена сума',a?.award_amount)}${selectField('currency','Валюта',{EUR:'EUR',UAH:'UAH',USD:'USD',GBP:'GBP'},a?.currency||'EUR')}${field('submission_at','Дата подання (ISO із поясом)',a?.submission_at)}${field('donor_reply_at','Дата відповіді (ISO із поясом)',a?.donor_reply_at)}${field('notes','Примітки / результат',a?.notes,'textarea')}</div><button class="button">Зберегти заявку</button><a href="#home">До реєстру</a><p id="form-result" class="error" role="alert"></p></form>${a?`<button id="archive-application">${a.archived_at?'Відновити з архіву':'Архівувати'}</button>`+'<button id="delete-application">Видалити заявку</button>':''}</section>`;
  bindForm(async input=>{for(const k of ['amount','award_amount'])input[k]=input[k].trim()===''?null:Number(input[k]);await crm.saveApplication(input,a?.id,a?.version);refreshData();location.hash='home';});
- if(a)main.querySelector('#archive-application').onclick=async()=>{try{await localWrite(()=>crm.applicationAction(a.id,a.archived_at?'restore':'archive'));refreshData();application(a.id);}catch(e){main.querySelector('#form-result').textContent=e.message;}};
+ if(a)main.querySelector('#archive-application').onclick=async()=>{try{await localWrite(()=>crm.applicationAction(a.id,a.archived_at?'restore':'archive'));refreshData();application(a.id,clientId,true);}catch(e){main.querySelector('#form-result').textContent=e.message;}};
  if(a)main.querySelector('#delete-application').onclick=async()=>{if(await confirmAction('Видалити цю заявку з реєстру?'))try{await localWrite(()=>crm.deleteApplication(a.id,true));refreshData();location.hash='home';}catch(e){main.querySelector('#form-result').textContent=e.message;}};
 }
 

@@ -7,11 +7,11 @@
     const result = rows.map(row => ({ ...row, client: names.get(row.client_id) || 'Клієнта не знайдено' }))
       .filter(row => (!clientId || row.client_id === clientId) && (!status || row.status === status) &&
         [row.title, row.client, row.grant, row.donor].join(' ').toLocaleLowerCase('uk').includes(needle));
-    const field = ['title', 'client', 'grant', 'deadline', 'status', 'amount'].includes(sort) ? sort : 'deadline';
+    const field = ['application_no', 'submission_at', 'title', 'client', 'grant', 'deadline', 'status', 'amount'].includes(sort) ? sort : 'deadline';
     const compare = (a, b) => String(a).localeCompare(String(b), 'uk', { numeric: true });
     return result.sort((a, b) => {
       if (grouped && a.client_id !== b.client_id) return compare(a.client, b.client) || compare(a.client_id, b.client_id);
-      const value = row => field === 'status' ? statuses[row.status] : field === 'deadline' && row.deadline ? Date.parse(row.deadline) : row[field];
+      const value = row => field === 'status' ? statuses[row.status] : ['deadline', 'submission_at'].includes(field) ? (row[field] && Number.isFinite(Date.parse(row[field])) ? Date.parse(row[field]) : null) : row[field];
       // Різні валюти впорядковуються окремими групами без конвертації.
       if (field === 'amount' && (a.currency || 'EUR') !== (b.currency || 'EUR')) return compare(a.currency || 'EUR', b.currency || 'EUR');
       const left = value(a);
