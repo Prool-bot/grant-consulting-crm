@@ -39,16 +39,16 @@ class CrmService {
   data() { const s=this.repository.read(); return {...s,clients:s.clients.filter(c=>!c.deleted_at),applications:s.applications.filter(a=>!a.deleted_at && s.clients.some(c=>c.id===a.client_id&&!c.deleted_at))}; }
   listClients({query='',type='',status='',sort='client_no',direction='asc',page=0,limit=20}={}) {
     const s=this.data();
-    const counts=new Map();
-    for(const a of s.applications) counts.set(a.client_id,(counts.get(a.client_id)||0)+1);
+    const summaries=D.applicationSummaries(s.applications);
     const searchable=s.clients.map(c=>({...c,
-      application_count:counts.get(c.id)||0,
+      application_count:0,...summaries.get(c.id),
       contacts:s.contacts.filter(r=>r.client_id===c.id).flatMap(r=>[r.full_name,r.email,r.phone])
     }));
     const rows=D.searchClients(searchable,{query,type,status});
-    const key=['client_no','legal_name','type','location','sectors','status','application_count'].includes(sort)?sort:'client_no';
+    const extra=['requested','awarded','next_deadline','last_application'];
+    const key=['client_no','legal_name','type','location','sectors','status','application_count',...extra].includes(sort)?sort:'client_no';
     const value=c=>key==='type'?D.types[c.type]:key==='status'?D.statuses[c.status]:key==='sectors'?(c.sectors||[]).join(', '):c[key];
-    rows.sort((a,b)=>(String(value(a)??'').localeCompare(String(value(b)??''),'uk',{numeric:true}) || a.client_no.localeCompare(b.client_no,'uk',{numeric:true}))*(direction==='desc'?-1:1));
+    rows.sort((a,b)=>extra.includes(key)?D.compareSummary(a,b,key,direction)||a.client_no.localeCompare(b.client_no,'uk',{numeric:true}):(String(value(a)??'').localeCompare(String(value(b)??''),'uk',{numeric:true}) || a.client_no.localeCompare(b.client_no,'uk',{numeric:true}))*(direction==='desc'?-1:1));
     const size=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:20));
     const index=Math.min(Math.max(0,Number.isInteger(page)?page:0),Math.max(0,Math.ceil(rows.length/size)-1));
     return {items:rows.slice(index*size,index*size+size),total:rows.length,page:index,limit:size};
@@ -90,6 +90,15 @@ class CrmService {
     return this.repository.transaction(s=>{const a=s.applications.find(a=>a.id===id&&!a.deleted_at);if(!a)throw Error('Заявку не знайдено.');a.archived_at=action==='archive'?new Date().toISOString():null;a.version++;a.updated_at=new Date().toISOString();});
   }
   deleteApplication(id,confirmed) { if(!confirmed) throw Error('Потрібне підтвердження.'); return this.repository.transaction(s=>{const a=s.applications.find(a=>a.id===id&&!a.deleted_at);if(!a)throw Error('Заявку не знайдено.');a.deleted_at=new Date().toISOString();a.version++;}); }
+  saveContact(input,id,version) {
+    if(!input.full_name?.trim() || (input.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))) throw Error('Вкажіть ім’я та коректну електронну адресу.');
+    return this.repository.transaction(s=>{
+      const row=s.contacts.find(r=>r.id===id&&r.client_id===input.client_id);
+      if(!row || (row.version||1)!==version || !s.clients.some(c=>c.id===row.client_id&&!c.deleted_at)) throw Error('Контакт змінено або видалено. Оновіть сторінку.');
+      for(const key of ['full_name','role','email','phone','preferred_channel']) if(Object.hasOwn(input,key)) row[key]=input[key];
+      row.version=(row.version||1)+1;row.updated_at=new Date().toISOString();return row;
+    });
+  }
   addRelated(table,input) {
     if(!['contacts','interactions'].includes(table)) throw Error('Невідомий розділ.');
     if(table==='contacts' && (!input.full_name?.trim() || (input.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)))) throw Error('Вкажіть ім’я та коректну електронну адресу або залиште її порожньою.');

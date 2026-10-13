@@ -48,7 +48,36 @@
     if (!validDate(now)) throw new Error('Некоректна дата зміни.');
     return { ...task, status, completed_at: status === 'completed' ? now : null, updated_at: now };
   }
-  const api = { types, statuses, taskStatuses, uuid, validDate, validateClient, validateGrant, normalizeUrl, searchClients, transitionTask };
+  function applicationSummaries(applications, now = Date.now()) {
+    const index = new Map();
+    for (const a of applications) {
+      if (a.deleted_at) continue;
+      if (!index.has(a.client_id)) index.set(a.client_id, { application_count: 0, requested: {}, awarded: {}, requested_unknown: 0, awarded_unknown: 0, next_deadline: null, last_application: null });
+      const s = index.get(a.client_id); s.application_count++;
+      for (const [field, key] of [['amount', 'requested'], ['award_amount', 'awarded']]) {
+        if (typeof a[field] !== 'number' || !Number.isFinite(a[field]) || !a.currency) s[key + '_unknown']++;
+        else s[key][a.currency] = (s[key][a.currency] || 0) + a[field];
+      }
+      if (validDate(a.created_at) && (!s.last_application || Date.parse(a.created_at) > Date.parse(s.last_application))) s.last_application = a.created_at;
+      if (!a.archived_at && !['rejected', 'stopped', 'won'].includes(a.status) && validDate(a.deadline) && Date.parse(a.deadline) > now && (!s.next_deadline || Date.parse(a.deadline) < Date.parse(s.next_deadline))) s.next_deadline = a.deadline;
+    }
+    return index;
+  }
+  function compareSummary(a, b, key, direction) {
+    const money = ['requested', 'awarded'].includes(key);
+    const left = money ? Object.keys(a[key] || {}).sort() : a[key];
+    const right = money ? Object.keys(b[key] || {}).sort() : b[key];
+    const missing = v => money ? !v.length : !v;
+    if (missing(left) || missing(right)) return missing(left) === missing(right) ? 0 : missing(left) ? 1 : -1;
+    const sign = direction === 'desc' ? -1 : 1;
+    if (!money) return (Date.parse(left) - Date.parse(right)) * sign;
+    // Спочатку незмінні групи наборів валют; усередині — числовий вектор у порядку валют.
+    const group = left.join('/').localeCompare(right.join('/'));
+    if (group) return group;
+    for (const currency of left) if (a[key][currency] !== b[key][currency]) return (a[key][currency] - b[key][currency]) * sign;
+    return 0;
+  }
+  const api = { types, statuses, taskStatuses, uuid, validDate, validateClient, validateGrant, normalizeUrl, searchClients, transitionTask, applicationSummaries, compareSummary };
   if (typeof module !== 'undefined') module.exports = api;
   else root.CrmDomain = api;
 })(globalThis);

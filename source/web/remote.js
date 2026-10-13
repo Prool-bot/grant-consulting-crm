@@ -32,7 +32,7 @@ class Service {
    // Та сама бізнес-валідація до мережевого виклику; зміни лише в тимчасовій копії.
    const repository=new Core.LocalRepository();repository.state=JSON.parse(JSON.stringify(this.state));
    const service=new Core.CrmService(repository,this.uuid);
-   const argumentsByAction={saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input]};
+   const argumentsByAction={saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input]};
    service[action](...argumentsByAction[action]);
    this.pending={signature,request:JSON.parse(JSON.stringify({action,args,revision:this.state.revision,requestId:this.uuid()})),acknowledged:false};
   }
@@ -42,6 +42,7 @@ class Service {
    await this.reload();const result=this.pending.result;this.pending=null;return result;
   }catch(error){if(error.code==='CONFLICT'){this.pending=null;}throw error;}finally{this.busy=false;}
  }
+ saveContact(input,id,version){return this.mutate('saveContact',{input,id,version});}
  saveClient(input,id,version){return this.mutate('saveClient',{input,id,version});}
  saveApplication(input,id,version){return this.mutate('saveApplication',{input,id,version});}
  clientAction(id,action,confirmed=false){return this.mutate('clientAction',{id,action,confirmed});}

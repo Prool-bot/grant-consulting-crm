@@ -18,7 +18,7 @@ function grants() {
 let ready=false;
 function render() {
   if(!ready)return;
-  main.classList.remove('registry-page');
+  main.classList.remove('registry-page','client-profile');
   const [route, id, clientId] = location.hash.slice(1).split('/');
   document.querySelectorAll('nav a').forEach(a => { if (a.hash === '#' + (route === 'profile' ? 'clients' : route || 'home')) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   ({ home, clients: showClients, profile: () => showProfile(id), application: () => application(id, clientId), ...(globalThis.CRM_REMOTE?{}:{tasks, grants}) }[route || 'home'] || (() => { main.innerHTML = heading('Сторінку не знайдено', 'Скористайтеся основною навігацією.'); }))();

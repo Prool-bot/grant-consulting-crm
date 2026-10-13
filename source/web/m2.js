@@ -22,10 +22,10 @@ function bindForm(save) { const form=main.querySelector('form');form.addEventLis
 const clientState={query:'',type:'',status:'',sort:'client_no',direction:'asc',page:0};
 function showClients() {
  main.classList.add('registry-page');
- const columns=[['client_no','Номер'],['legal_name','Назва'],['type','Тип'],['location','Географія'],['sectors','Напрям діяльності'],['status','Статус'],['application_count','Кількість заявок']];
+ const columns=[['client_no','Номер'],['legal_name','Назва'],['type','Тип'],['location','Географія'],['sectors','Напрям діяльності'],['status','Статус'],['application_count','Кількість заявок'],['requested','Запитувано'],['awarded','Присуджено'],['next_deadline','Найближчий дедлайн'],['last_application','Остання заявка']];
  main.innerHTML='<div class="registry-toolbar"><a class="button" href="#profile">+ Створити клієнта</a><label class="client-search">Пошук клієнтів<input id="query" type="search" placeholder="Назва, номер, контакт, географія…"></label><button id="client-filter-toggle" class="button secondary" aria-expanded="false" aria-controls="client-filters">Розширені фільтри<span id="active-filters"></span></button></div>'+
  '<div id="client-filters" class="registry-filter-panel" hidden><label>Тип<select id="type"><option value="">Усі типи</option>'+options(D.types)+'</select></label><label>Статус<select id="status"><option value="">Усі статуси</option>'+options(D.statuses)+'</select></label><button id="client-reset" class="button secondary">Скинути фільтри</button></div>'+
- '<div class="registry-title"><h1>Клієнти</h1><span id="count" role="status"></span></div><p class="sr-only" id="clients-help">Натисніть заголовок для сортування або назву клієнта для перегляду. На вузькому екрані прокручуйте таблицю горизонтально.</p><div class="table-scroll" role="region" aria-label="Таблиця клієнтів" aria-describedby="clients-help" tabindex="0"><table class="registry-table clients-table"><caption class="sr-only">Каталог клієнтів</caption><thead><tr>'+columns.map(([key,label])=>'<th scope="col" data-column="'+key+'" aria-sort="none"><button data-sort="'+key+'">'+label+'<span aria-hidden="true"></span></button></th>').join('')+'</tr></thead><tbody id="results"></tbody></table></div><p class="registry-note">Кількість заявок включає архівні; видалені не враховуються. Географія — місце розташування клієнта.</p><div class="actions"><button id="prev">Назад</button><span id="page"></span><button id="next">Далі</button></div>';
+ '<div class="registry-title"><h1>Клієнти</h1><span id="count" role="status"></span></div><p class="sr-only" id="clients-help">Натисніть заголовок для сортування або назву клієнта для перегляду. На вузькому екрані прокручуйте таблицю горизонтально.</p><div class="table-scroll" role="region" aria-label="Таблиця клієнтів" aria-describedby="clients-help" tabindex="0"><table class="registry-table clients-table"><caption class="sr-only">Каталог клієнтів</caption><thead><tr>'+columns.map(([key,label])=>'<th scope="col" data-column="'+key+'" aria-sort="none"><button data-sort="'+key+'">'+label+'<span aria-hidden="true"></span></button></th>').join('')+'</tr></thead><tbody id="results"></tbody></table></div><p class="registry-note">Кількість і суми включають архівні заявки; видалені не враховуються. Присуджено — не підтвердження надходження коштів. Сортування сум: набори валют за абеткою, далі числові суми послідовно за валютами; без конвертації. Географія — місце розташування клієнта.</p><div class="actions"><button id="prev">Назад</button><span id="page"></span><button id="next">Далі</button></div>';
  const toggle=main.querySelector('#client-filter-toggle'),panel=main.querySelector('#client-filters');
  toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)main.querySelector('#type').focus();};
  panel.onkeydown=e=>{if(e.key==='Escape'){panel.hidden=true;toggle.setAttribute('aria-expanded','false');toggle.focus();}};
@@ -34,7 +34,7 @@ function showClients() {
   main.querySelector('#count').textContent='Знайдено: '+result.total;
   const active=Number(Boolean(clientState.type))+Number(Boolean(clientState.status));main.querySelector('#active-filters').textContent=active?' ('+active+')':'';
   main.querySelectorAll('[data-column]').forEach(th=>{const selected=th.dataset.column===clientState.sort;th.setAttribute('aria-sort',selected?(clientState.direction==='asc'?'ascending':'descending'):'none');th.querySelector('span').textContent=selected?(clientState.direction==='asc'?' ↑':' ↓'):' ↕';});
-  main.querySelector('#results').innerHTML=result.items.map(c=>'<tr class="client-row"><td>'+escapeHtml(c.client_no)+'</td><td><a href="#profile/'+encodeURIComponent(c.id)+'"><strong>'+escapeHtml(c.legal_name)+'</strong></a></td><td>'+escapeHtml(D.types[c.type])+'</td><td>'+escapeHtml(c.location||'Не вказано')+'</td><td>'+escapeHtml(c.sectors?.join(', ')||'Не вказано')+'</td><td>'+escapeHtml(D.statuses[c.status])+'</td><td class="numeric">'+c.application_count+'</td></tr>').join('')||'<tr><td colspan="7" class="empty">Клієнтів не знайдено. Змініть запит або скиньте фільтри.</td></tr>';
+  main.querySelector('#results').innerHTML=result.items.map(c=>'<tr class="client-row"><td>'+escapeHtml(c.client_no)+'</td><td><a href="#profile/'+encodeURIComponent(c.id)+'"><strong>'+escapeHtml(c.legal_name)+'</strong></a></td><td>'+escapeHtml(D.types[c.type])+'</td><td>'+escapeHtml(c.location||'Не вказано')+'</td><td>'+escapeHtml(c.sectors?.join(', ')||'Не вказано')+'</td><td>'+escapeHtml(D.statuses[c.status])+'</td><td class="numeric">'+c.application_count+'</td><td>'+escapeHtml(summaryMoney(c,'requested'))+'</td><td>'+escapeHtml(summaryMoney(c,'awarded'))+'</td><td>'+escapeHtml(c.next_deadline?applicationDate(c.next_deadline):'Майбутніх немає')+'</td><td>'+escapeHtml(c.last_application?'Створено '+applicationDate(c.last_application):'Не вказано')+'</td></tr>').join('')||'<tr><td colspan="11" class="empty">Клієнтів не знайдено. Змініть запит або скиньте фільтри.</td></tr>';
   main.querySelector('#page').textContent='Сторінка '+(result.page+1)+' із '+Math.max(1,Math.ceil(result.total/result.limit));main.querySelector('#prev').disabled=result.page===0;main.querySelector('#next').disabled=(result.page+1)*result.limit>=result.total;
  };
  for(const key of ['query','type','status']){const e=main.querySelector('#'+key);e.value=clientState[key];e.oninput=()=>{clientState[key]=e.value;clientState.page=0;update();};}
@@ -46,18 +46,54 @@ const overviewFields=[['legal_name','Назва або ім’я'],['type','Ти
 const dossierFields=[['short_name','Коротка назва'],['edrpou_optional','ЄДРПОУ'],['website','Вебсайт'],['source','Джерело знайомства'],['priority','Пріоритет'],['next_action_at','Наступна дія (ISO, з часовим поясом)'],['geography','Географія роботи'],['target_groups','Цільові групи'],['funding_needs','Потреби у фінансуванні'],['grants_experience','Грантовий досвід'],['prior_donors','Попередні донори'],['capacity_note','Командна спроможність'],['competencies','Компетенції фізичної особи'],['portfolio','Портфоліо фізичної особи'],['eligibility_notes','Допустимість за програмами'],['description','Опис']];
 const priorities={normal:'Звичайний',high:'Високий',low:'Низький'};
 function clientFieldValue(c,key){return key==='type'?D.types[c.type]:key==='status'?D.statuses[c.status]:key==='priority'?priorities[c.priority]:key==='sectors'?(c.sectors||[]).join(', '):c[key];}
+function summaryMoney(row,key) {
+ const entries=Object.entries(row[key]||{}).sort(([a],[b])=>a.localeCompare(b));
+ if(!entries.length)return 'Не вказано';
+ return entries.map(([currency,value])=>applicationAmount(value,currency)).join(' · ')+(row[key+'_unknown']?' · Частина сум невідома ('+row[key+'_unknown']+')':'');
+}
+function kyivDateTime(value) {
+ return D.validDate(value)?new Intl.DateTimeFormat('uk-UA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(value)):'—';
+}
+function sortedHistory(rows) {
+ return rows.slice().sort((a,b)=>(D.validDate(b.happened_at)?Date.parse(b.happened_at):-Infinity)-(D.validDate(a.happened_at)?Date.parse(a.happened_at):-Infinity));
+}
+function profileSummary(c) {
+ const state=crm.data(),s=D.applicationSummaries(state.applications).get(c.id)||{};
+ const last=sortedHistory(state.interactions.filter(r=>r.client_id===c.id))[0];
+ return '<dl class="profile-summary">'+[['Статус',D.statuses[c.status]],['Заявок',s.application_count||0],['Остання взаємодія',kyivDateTime(last?.happened_at)],['Найближчий дедлайн',kyivDateTime(s.next_deadline)],['Наступна дія',kyivDateTime(c.next_action_at)]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+escapeHtml(value)+'</dd></div>').join('')+'</dl>';
+}
+function detailsView(c,fields) {
+ return '<dl class="profile-details">'+fields.map(([k,l])=>'<div><dt>'+l+'</dt><dd>'+escapeHtml(clientFieldValue(c,k)||'—')+'</dd></div>').join('')+'</dl>';
+}
+function dossierView(c) {
+ const groups=[['Реєстраційні відомості',['short_name','edrpou_optional','website']],['Діяльність і цільові групи',['geography','target_groups']],['Грантовий досвід та потреби',['funding_needs','grants_experience','prior_donors','eligibility_notes']],['Спроможність',['capacity_note','competencies','portfolio']],['Додаткова інформація',['source','priority','description']]];
+ return groups.map(([title,keys])=>{const fields=dossierFields.filter(([k])=>keys.includes(k)&&(c.type==='individual'||!['competencies','portfolio'].includes(k))&&String(c[k]??'').trim());return '<section class="dossier-group"><h3>'+title+'</h3>'+(fields.length?detailsView(c,fields):'<p class="muted">Відомості ще не заповнено. <button data-edit-dossier>Редагувати</button></p>')+'</section>';}).join('');
+}
+function contactLink(value,kind) {
+ const valid=kind==='email'?/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/.test(value||''):/^\+?[\d ()-]{7,24}$/.test(value||'')&&String(value).replace(/\D/g,'').length>=7;
+ return valid?'<a href="'+(kind==='email'?'mailto:'+encodeURIComponent(value):'tel:'+value.replace(/[ ()-]/g,''))+'">'+escapeHtml(value)+'</a>':escapeHtml(value||'—');
+}
+function contactsView(rows) {
+ if(!rows.length)return '<p>Записів ще немає.</p>';
+ return '<div class="contact-cards">'+rows.map(r=>'<article class="contact-card"><h3>'+escapeHtml(r.full_name)+'</h3><dl>'+[['Посада',escapeHtml(r.role||'—')],['Телефон',contactLink(r.phone,'phone')],['E-mail',contactLink(r.email,'email')],['Бажаний канал',escapeHtml(r.preferred_channel||'—')]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+value+'</dd></div>').join('')+'</dl><button data-edit-contact="'+escapeHtml(r.id)+'">Редагувати контакт</button></article>').join('')+'</div>';
+}
+function historyView(rows) {
+ return '<p class="registry-note">Час: Europe/Kyiv. Записи незмінні після створення.</p>'+(sortedHistory(rows).map(r=>'<article class="history-entry"><strong>'+escapeHtml(kyivDateTime(r.happened_at))+' · '+escapeHtml(r.type)+'</strong><p>'+escapeHtml(r.summary)+'</p><p>Наступний крок: '+escapeHtml(r.next_step||'—')+'</p></article>').join('')||'<p>Записів ще немає.</p>');
+}
 function showProfile(id,initialTab='Огляд') {
  const c=crm.data().clients.find(c=>c.id===id);
+ if(c)main.classList.add('client-profile');
  if(id&&!c){main.innerHTML=heading('Клієнта не знайдено','Клієнта видалено або посилання застаріле.','<a href="#clients">До клієнтів</a>');return;}
- main.innerHTML=heading(c?escapeHtml(c.legal_name):'Новий клієнт',c?'№ '+escapeHtml(c.client_no):'Основні дані; розширені відомості можна додати у вкладці «Досьє».','<a href="#clients">До клієнтів</a>')+(c?'<div class="actions"><button id="archive">'+(c.status==='archived'?'Відновити з архіву':'Архівувати')+'</button><button id="delete-client">Видалити клієнта</button><a class="button" href="#application/new/'+encodeURIComponent(c.id)+'">+ Заявка клієнта</a></div><div class="tabs" aria-label="Картка клієнта">'+['Огляд','Досьє','Контакти','Історія','Заявки'].map(t=>'<button data-tab="'+t+'">'+t+'</button>').join('')+'</div>':'')+'<section class="panel" id="profile-content"></section>';
- const show=(tab,editing=false)=>{
+ main.innerHTML=heading(c?escapeHtml(c.legal_name):'Новий клієнт',c?'№ '+escapeHtml(c.client_no):'Основні дані; розширені відомості можна додати у вкладці «Досьє».','<a href="#clients">До клієнтів</a>')+(c?'<div class="actions"><details id="client-actions"><summary>Дії</summary><div class="action-menu"><button id="archive">'+(c.status==='archived'?'Відновити з архіву':'Архівувати')+'</button><button id="delete-client">Видалити клієнта</button></div></details><a class="button" href="#application/new/'+encodeURIComponent(c.id)+'">+ Заявка клієнта</a></div><div class="tabs" aria-label="Картка клієнта">'+['Огляд','Досьє','Контакти','Історія','Заявки'].map(t=>'<button data-tab="'+t+'">'+t+'</button>').join('')+'</div>':'')+(c?profileSummary(c):'')+'<section class="panel" id="profile-content"></section>';
+ const menu=main.querySelector('#client-actions');if(menu)menu.onkeydown=e=>{if(e.key==='Escape'){menu.open=false;menu.querySelector('summary').focus();}};
+ const show=(tab,editing=false,contact=null)=>{
   main.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===tab)));
   const content=main.querySelector('#profile-content');
   if(tab==='Огляд'||tab==='Досьє'){
-   const fields=tab==='Огляд'?overviewFields:dossierFields;
+   const fields=(tab==='Огляд'?overviewFields:dossierFields).filter(([k])=>c?.type==='individual'||!['competencies','portfolio'].includes(k));
    if(c&&!editing){
-    content.innerHTML='<div class="actions"><h2>'+tab+'</h2><button id="edit-client" class="button secondary">Редагувати</button></div><dl class="profile-details">'+fields.map(([k,l])=>'<div><dt>'+l+'</dt><dd>'+escapeHtml(clientFieldValue(c,k)||'Не вказано')+'</dd></div>').join('')+'</dl>';
-    content.querySelector('#edit-client').onclick=()=>show(tab,true);return;
+    content.innerHTML='<div class="actions"><h2>'+tab+'</h2><button id="edit-client" class="button secondary">Редагувати</button></div>'+(tab==='Досьє'?dossierView(c):detailsView(c,fields));
+    content.querySelectorAll('#edit-client,[data-edit-dossier]').forEach(b=>b.onclick=()=>show(tab,true));return;
    }
    content.innerHTML='<h2>'+(c?'Редагування: '+tab:'Основні дані')+'</h2><form><div class="form-grid">'+fields.map(([k,l])=>k==='type'?selectField(k,l,D.types,c?.type||'ngo'):k==='status'?selectField(k,l,D.statuses,c?.status||'potential'):k==='priority'?selectField(k,l,priorities,c?.priority||'normal'):field(k,l+(k==='legal_name'?' *':k==='sectors'?' (через кому)':''),k==='sectors'?c?.sectors?.join(', '):c?.[k],['description','funding_needs','grants_experience'].includes(k)?'textarea':'input')).join('')+'</div><div class="actions"><button class="button">Зберегти клієнта</button><button type="button" id="cancel-edit">Скасувати</button></div><p id="form-result" class="error" role="alert"></p></form>';
    content.querySelector('#cancel-edit').onclick=()=>c?show(tab):location.hash='clients';
@@ -73,11 +109,13 @@ function showProfile(id,initialTab='Огляд') {
   }else{
    const contacts=tab==='Контакти',table=contacts?'contacts':'interactions';
    const fields=contacts?[['full_name','Ім’я *'],['role','Роль'],['email','Електронна адреса'],['phone','Телефон'],['preferred_channel','Бажаний канал']]:[['happened_at','Дата і час із поясом *'],['summary','Підсумок *'],['next_step','Наступний крок']];
-   content.innerHTML='<h2>'+tab+'</h2>'+(crm.data()[table].filter(r=>r.client_id===id).map(r=>'<article class="row"><div>'+(contacts?'<strong>'+escapeHtml(r.full_name)+'</strong><p>'+escapeHtml([r.role,r.email,r.phone,r.preferred_channel].filter(Boolean).join(' · '))+'</p>':'<strong>'+escapeHtml(r.type)+' · '+escapeHtml(r.happened_at)+'</strong><p>'+escapeHtml(r.summary)+'</p><p>'+escapeHtml(r.next_step)+'</p>')+'</div></article>').join('')||'<p>Записів ще немає.</p>');
-   if(!editing){content.innerHTML+='<button id="add-related" class="button secondary">'+(contacts?'Додати контакт':'Додати взаємодію')+'</button>';content.querySelector('#add-related').onclick=()=>show(tab,true);return;}
-   content.innerHTML+='<form><div class="form-grid">'+(contacts?'':selectField('type','Вид взаємодії',{'Дзвінок':'Дзвінок','Зустріч':'Зустріч','Лист':'Лист','Повідомлення':'Повідомлення','Рекомендація':'Рекомендація','Передача документів':'Передача документів'},'Дзвінок'))+fields.map(([k,l])=>field(k,l,k==='happened_at'?new Date().toISOString():'')).join('')+'</div><div class="actions"><button class="button">Додати запис</button><button id="cancel-related" type="button">Скасувати</button></div><p id="form-result" class="error" role="alert"></p></form>';
+   const related=crm.data()[table].filter(r=>r.client_id===id);
+   content.innerHTML='<h2>'+tab+'</h2>'+(contacts?contactsView(related):historyView(related));
+   if(!editing){content.innerHTML+='<button id="add-related" class="button secondary">'+(contacts?'Додати контакт':'Додати взаємодію')+'</button>';content.querySelector('#add-related').onclick=()=>show(tab,true);content.querySelectorAll('[data-edit-contact]').forEach(b=>b.onclick=()=>show(tab,true,related.find(r=>r.id===b.dataset.editContact)));return;}
+   content.innerHTML='<h2>'+tab+'</h2><form><div class="form-grid">'+(contacts?'':selectField('type','Вид взаємодії',{'Дзвінок':'Дзвінок','Зустріч':'Зустріч','Лист':'Лист','Повідомлення':'Повідомлення','Рекомендація':'Рекомендація','Передача документів':'Передача документів'},'Дзвінок'))+fields.map(([k,l])=>field(k,l,contact?.[k]??(k==='happened_at'?new Date().toISOString():''))).join('')+'</div><div class="actions"><button class="button">'+(contact?'Зберегти контакт':'Додати запис')+'</button><button id="cancel-related" type="button">Скасувати</button></div><p id="form-result" class="error" role="alert"></p></form>';
    content.querySelector('#cancel-related').onclick=()=>show(tab);
-   bindForm(async input=>{await crm.addRelated(table,{...input,client_id:id});refreshData();show(tab);});
+   content.querySelector('form input,form select')?.focus();
+   bindForm(async input=>{if(contact)await crm.saveContact({...input,client_id:id},contact.id,contact.version||1);else await crm.addRelated(table,{...input,client_id:id});refreshData();showProfile(id,tab);});
   }
  };
  main.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>show(b.dataset.tab));
