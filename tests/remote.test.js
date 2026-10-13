@@ -56,3 +56,17 @@ test('Браузерний google.script.run: успіх, серверна ві�
  const s=new context.CrmRemote.Service();await s.reload();assert.equal(s.data().clients.length,0);
  mode='denied';await assert.rejects(s.reload(),/Доступ закрито/);mode='transport';await assert.rejects(s.reload(),/Не вдалося підтвердити/);
 });
+
+test('Контакти UI → RPC → Sheets: оновлення без дубля, повтор після обриву, конфлікт і сталі заголовки',async()=>{
+ const {call,repo,service:s}=fixture();await s.reload();const c=await s.saveClient(client);
+ await s.addRelated('contacts',{client_id:c.id,full_name:'Демо: Контакт',email:'demo@example.test'});
+ const original=s.data().contacts[0],other=new Service(call,randomUUID);await other.reload();
+ let lose=true;const retry=new Service(async(m,r)=>{const result=await call(m,r);if(m==='crmMutate'&&lose){lose=false;throw Error('Обрив');}return result;},randomUUID);await retry.reload();
+ const input={...original,full_name:'Демо: Оновлено'};
+ await assert.rejects(retry.saveContact(input,original.id,original.version),/Обрив/);
+ await retry.saveContact(input,original.id,original.version);
+ const stored=repo().read().contacts;assert.equal(stored.length,1);assert.equal(stored[0].id,original.id);assert.equal(stored[0].version,2);assert.equal(stored[0].created_at,original.created_at);
+ await assert.rejects(other.saveContact({...original,full_name:'Демо: Конфлікт'},original.id,original.version),/Конфлікт/);
+ assert.equal(repo().read().contacts[0].full_name,'Демо: Оновлено');
+ const sheet=repo().sheet('contacts');assert.deepEqual(sheet.getRange(1,1,1,4).getValues()[0],['id','client_id','version','data_json']);
+});

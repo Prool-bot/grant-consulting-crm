@@ -40,6 +40,7 @@ function mutate(repository,uuid,request) {
   // Для видалення/архівування М2 не мав аргументу версії: сервер вимагає
   // ревізію всього стану, яка перевіряється під тим самим ScriptLock.
   switch(request.action) {
+    case 'saveContact': return service.saveContact(a.input,a.id,a.version);
     case 'saveClient': return service.saveClient(a.input,a.id,a.version);
     case 'saveApplication': return service.saveApplication(a.input,a.id,a.version);
     case 'clientAction': return service.clientAction(a.id,a.action,a.confirmed===true);
