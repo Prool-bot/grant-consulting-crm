@@ -24,3 +24,26 @@ test('Знімок відновлює зв’язки; пошкоджений з
 test('Повторна ініціалізація не повертає видалені записи й не дублює дані',()=>{const {service:s}=setup();const seed={clients:[{...client,id:'demo-id',client_no:'0001',contacts:['Демо контакт']}],applications:[]};s.initialize(seed);s.clientAction('demo-id','delete',true);s.initialize(seed);assert.equal(s.data().clients.length,0);assert.equal(s.data().contacts.length,1);});
 test('Сортування сум групує валюти без хибної конвертації',()=>{const rows=[{id:'1',amount:100,currency:'UAH'},{id:'2',amount:500,currency:'EUR'},{id:'3',amount:10,currency:'EUR'}];assert.deepEqual(registry.select(rows,[],{sort:'amount'}).map(a=>a.id),['3','2','1']);});
 test('Сервіс каталогу: пошук контактів, комбіновані фільтри, сортування, пагінація',()=>{const {service:s}=setup();for(let i=0;i<25;i++)s.saveClient({...client,legal_name:`Демо: Клієнт ${i}`});const c=s.data().clients[0];s.addRelated('contacts',{client_id:c.id,full_name:'Демо: Координатор'});assert.equal(s.listClients({query:'Координатор',type:'ngo',status:'active'}).total,1);assert.equal(s.listClients().items.length,20);assert.equal(s.listClients({page:1}).items.length,5);assert.equal(s.listClients({direction:'desc'}).items[0].client_no,'0025');assert.equal(s.listClients({query:'Відсутній'}).total,0);});
+
+test('Каталог: сім колонок сортуються, лічильник враховує архів і не враховує видалені заявки',()=>{
+ const {service:s}=setup();const a=s.saveClient({...client,legal_name:'Демо: А',location:'Київ',geography:'Синтетичний регіон'}),b=s.saveClient({...client,legal_name:'Демо: Б',type:'company',status:'paused',location:'Львів',sectors:['Медицина']});
+ const app=s.saveApplication({...application,client_id:a.id});s.applicationAction(app.id,'archive');
+ const deleted=s.saveApplication({...application,client_id:a.id});s.deleteApplication(deleted.id,true);
+ const before=s.repository.snapshot();
+ assert.equal(s.listClients({sort:'application_count',direction:'desc'}).items[0].application_count,1);
+ assert.equal(s.listClients({sort:'application_count'}).items[0].id,b.id);
+ assert.equal(s.listClients({query:'Синтетичний регіон'}).items[0].id,a.id);
+ assert.equal(s.listClients({query:a.client_no}).total,1);
+ for(const sort of ['client_no','legal_name','type','location','sectors','status','application_count'])assert.deepEqual(s.listClients({sort}).items.map(c=>c.id),s.listClients({sort,direction:'desc'}).items.map(c=>c.id).reverse());
+ assert.deepEqual(s.listClients().items[0].sectors,['Освіта']);assert.equal(s.repository.snapshot(),before);
+});
+
+test('Часткове редагування вкладок зберігає досьє старих записів, контакти та заявки',()=>{
+ const {service:s,repository:r}=setup();const c=s.saveClient({...client,geography:'Демо: регіон',capacity_note:'Демо: команда',competencies:'Демо: компетенції',description:'Демо: опис'});
+ s.addRelated('contacts',{client_id:c.id,full_name:'Демо: Людина'});s.saveApplication({...application,client_id:c.id});
+ const updated=s.saveClient({legal_name:'Демо: Нова назва',type:c.type,status:c.status,location:'Демо: місто',sectors:[]},c.id,c.version);
+ assert.equal(updated.capacity_note,c.capacity_note);assert.equal(updated.geography,c.geography);assert.equal(updated.competencies,c.competencies);
+ const dossier=s.saveClient({legal_name:updated.legal_name,type:updated.type,status:updated.status,capacity_note:''},c.id,updated.version);
+ assert.equal(dossier.capacity_note,'');assert.equal(dossier.location,'Демо: місто');assert.equal(dossier.description,c.description);
+ const snapshot=r.snapshot();const restored=new LocalRepository();restored.restore(snapshot);assert.equal(new CrmService(restored).data().contacts.length,1);assert.equal(new CrmService(restored).data().applications.length,1);
+});

@@ -1,0 +1,98 @@
+name: CRM — ручний випуск у Google Apps Script
+
+on:
+  workflow_dispatch:
+    inputs:
+      approve:
+        description: 'Підтвердження: оновити ЧИННУ приватну CRM (без зміни бази)'
+        required: true
+        type: choice
+        options:
+          - 'NO'
+          - DEPLOY
+        default: 'NO'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-google-apps-script-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.approve == 'DEPLOY' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Отримати схвалений код
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Перевірити бізнес-логіку
+        run: npm test
+
+      - name: Зібрати поточну версію CRM
+        run: npm run build
+
+      - name: Перевірити призначення й захист збірки
+        run: node scripts/verify-cloud-release.js
+
+      - name: Встановити офіційний clasp (без зміни package.json)
+        run: npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund @google/clasp@3.4.1
+
+      - name: Оновити лише чинне розгортання
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CRM_SCRIPT_ID: ${{ secrets.CRM_SCRIPT_ID }}
+          CRM_DEPLOYMENT_ID: ${{ secrets.CRM_DEPLOYMENT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          trap 'rm -f "$HOME/.clasprc.json" .clasp.json' EXIT
+          for name in CLASPRC_JSON CRM_SCRIPT_ID CRM_DEPLOYMENT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Не налаштовано GitHub Secret ${name}. Розгортання скасовано."
+              exit 1
+            fi
+          done
+          node - <<'NODE'
+          'use strict';
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const auth = process.env.CLASPRC_JSON;
+          let config;
+          try { config = JSON.parse(auth); } catch {
+            throw new Error('CLASPRC_JSON: некоректний формат JSON');
+          }
+          if (!config || typeof config !== 'object' || Array.isArray(config)) {
+            throw new Error('CLASPRC_JSON: некоректний формат JSON');
+          }
+          const id = process.env.CRM_SCRIPT_ID.trim();
+          const dep = process.env.CRM_DEPLOYMENT_ID.trim();
+          if (!/^[\w-]{15,}$/.test(id) || !/^[\w-]{15,}$/.test(dep)) {
+            throw new Error('Некоректний Script ID або Deployment ID');
+          }
+          fs.writeFileSync(path.join(process.env.HOME, '.clasprc.json'), auth, {mode: 0o600});
+          fs.writeFileSync('.clasp.json', JSON.stringify({scriptId: id, rootDir: 'dist/apps-script'}), {mode: 0o600});
+          NODE
+          # Важливо: push замінює всі файли скрипту в редакторі, але не чіпає Script Properties.
+          if ! ./node_modules/.bin/clasp push --force >/dev/null 2>&1; then
+            echo '::error::Не вдалося завантажити код. Перевірте авторизацію та проєкт приватно.'
+            exit 1
+          fi
+          # Переопублікувати ІСНУЮЧИЙ Deployment ID, щоб зберегти URL /exec.
+          if ! ./node_modules/.bin/clasp create-deployment --deploymentId "$CRM_DEPLOYMENT_ID" --description "CRM: ${GITHUB_SHA:0:12}" >/dev/null 2>&1; then
+            echo '::error::Випуск не завершено; чернетка могла змінитися. Перевірте чинне розгортання приватно.'
+            exit 1
+          fi
+          echo '✅ Оновлено чинне розгортання. Перевірте його під акаунтом власника.'

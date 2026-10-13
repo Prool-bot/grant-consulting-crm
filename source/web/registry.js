@@ -1,5 +1,5 @@
 'use strict';
-const registryState = { query: '', clientId: '', status: '', sort: 'deadline', direction: 'asc', grouped: true };
+const registryState = { query: '', clientId: '', status: '', sort: 'deadline', direction: 'asc', grouped: true, archived: false };
 function registry() {
   main.classList.add('registry-page');
   main.innerHTML = `
@@ -7,7 +7,7 @@ function registry() {
       <a class="button" href="#application/new">+ Додати заявку</a>
       <select id="application-client" aria-label="Клієнт"><option value="">Усі клієнти</option>${data.clients.map(c => `<option value="${c.id}">${escapeHtml(c.legal_name)}</option>`).join('')}</select>
       <button id="filter-toggle" class="button secondary" aria-expanded="false" aria-controls="application-filters">🔍 Пошук і фільтри<span id="active-filters"></span></button>
-      <label class="check-label"><input id="application-group" type="checkbox"> Групувати за клієнтами</label>
+      <label class="check-label"><input id="application-archive" type="checkbox"> Архів заявок</label><button id="reload-data">Оновити дані</button><label class="check-label"><input id="application-group" type="checkbox"> Групувати за клієнтами</label>
     </div>
     <div id="application-filters" class="registry-filter-panel" hidden>
       <label>Пошук заявок<input id="application-query" type="search" placeholder="Заявка, клієнт, грант, донор…"></label>
@@ -16,7 +16,7 @@ function registry() {
     </div>
     <div class="registry-title"><h1>Реєстр грантових заявок</h1><span id="application-count" role="status"></span></div>
     <p class="sr-only" id="table-help">Натисніть заголовок стовпця для сортування. На вузькому екрані прокручуйте таблицю горизонтально.</p>
-    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption class="sr-only">Локальні тестові грантові заявки</caption><thead><tr>${[['title','Заявка'],['client','Клієнт / досьє'],['grant','Грант / донор'],['deadline','Дедлайн'],['amount','Сума / валюта'],['status','Статус']].map(([key, title]) => `<th scope="col" data-column="${key}" aria-sort="none"><button data-sort="${key}">${title}<span aria-hidden="true"></span></button></th>`).join('')}</tr></thead><tbody id="application-rows"></tbody></table></div><p class="registry-note">М2 · лише вигадані дані · локальне збереження. Sheets та імпорт не підключені.</p>`;
+    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption class="sr-only">Грантові заявки</caption><thead><tr>${[['title','Заявка'],['client','Клієнт / досьє'],['grant','Грант / донор'],['deadline','Дедлайн'],['amount','Сума / валюта'],['status','Статус']].map(([key, title]) => `<th scope="col" data-column="${key}" aria-sort="none"><button data-sort="${key}">${title}<span aria-hidden="true"></span></button></th>`).join('')}</tr></thead><tbody id="application-rows"></tbody></table></div><p class="registry-note">${globalThis.CRM_REMOTE?'CRM 1.0 · Google Sheets · доступ лише власнику':'Локальна демонстрація · лише вигадані дані'}</p>`;
   const query = document.querySelector('#application-query'), client = document.querySelector('#application-client'), status = document.querySelector('#application-status'), group = document.querySelector('#application-group');
   query.value = registryState.query; client.value = registryState.clientId; status.value = registryState.status; group.checked = registryState.grouped;
   const toggle = document.querySelector('#filter-toggle'), panel = document.querySelector('#application-filters');
@@ -32,7 +32,7 @@ function registry() {
     const active = Number(Boolean(registryState.query)) + Number(Boolean(registryState.status));
     document.querySelector('#active-filters').textContent = active ? ' (' + active + ')' : '';
     if (registryState.clientId && !data.clients.some(c=>c.id===registryState.clientId)) {registryState.clientId='';client.value='';}
-    const rows = CrmRegistry.select(data.applications, data.clients, registryState);
+    const rows = CrmRegistry.select(data.applications.filter(a=>Boolean(a.archived_at)===registryState.archived), data.clients, registryState);
     document.querySelector('#application-count').textContent = `Показано ${rows.length} із ${data.applications.length}`;
     main.querySelectorAll('[data-column]').forEach(th => {
       const selected = th.dataset.column === registryState.sort;
@@ -59,5 +59,7 @@ function registry() {
     registryState.query = registryState.clientId = registryState.status = '';
     query.value = client.value = status.value = ''; update();
   });
+  const archive=main.querySelector('#application-archive');archive.checked=registryState.archived;archive.onchange=()=>{registryState.archived=archive.checked;update();};
+  main.querySelector('#reload-data').onclick=async event=>{event.target.disabled=true;try{if(crm.reload)await crm.reload();refreshData();registry();}catch{alert('Не вдалося оновити дані. Спробуйте ще раз.');event.target.disabled=false;}};
   update();
 }

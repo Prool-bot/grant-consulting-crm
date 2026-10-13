@@ -39,13 +39,16 @@ class CrmService {
   data() { const s=this.repository.read(); return {...s,clients:s.clients.filter(c=>!c.deleted_at),applications:s.applications.filter(a=>!a.deleted_at && s.clients.some(c=>c.id===a.client_id&&!c.deleted_at))}; }
   listClients({query='',type='',status='',sort='client_no',direction='asc',page=0,limit=20}={}) {
     const s=this.data();
+    const counts=new Map();
+    for(const a of s.applications) counts.set(a.client_id,(counts.get(a.client_id)||0)+1);
     const searchable=s.clients.map(c=>({...c,
-      contacts:s.contacts.filter(r=>r.client_id===c.id).flatMap(r=>[r.full_name,r.email,r.phone]),
-      sectors:[...(c.sectors||[]),c.geography||'']
+      application_count:counts.get(c.id)||0,
+      contacts:s.contacts.filter(r=>r.client_id===c.id).flatMap(r=>[r.full_name,r.email,r.phone])
     }));
     const rows=D.searchClients(searchable,{query,type,status});
-    const key=['client_no','legal_name','location'].includes(sort)?sort:'client_no';
-    rows.sort((a,b)=>String(a[key]||'').localeCompare(String(b[key]||''),'uk',{numeric:true})*(direction==='desc'?-1:1));
+    const key=['client_no','legal_name','type','location','sectors','status','application_count'].includes(sort)?sort:'client_no';
+    const value=c=>key==='type'?D.types[c.type]:key==='status'?D.statuses[c.status]:key==='sectors'?(c.sectors||[]).join(', '):c[key];
+    rows.sort((a,b)=>(String(value(a)??'').localeCompare(String(value(b)??''),'uk',{numeric:true}) || a.client_no.localeCompare(b.client_no,'uk',{numeric:true}))*(direction==='desc'?-1:1));
     const size=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:20));
     const index=Math.min(Math.max(0,Number.isInteger(page)?page:0),Math.max(0,Math.ceil(rows.length/size)-1));
     return {items:rows.slice(index*size,index*size+size),total:rows.length,page:index,limit:size};
@@ -81,6 +84,10 @@ class CrmService {
       const now=new Date().toISOString();const row={...old,...fields,id:old?.id||this.uuid(),application_no:old?.application_no||`ЛОК-${s.applications.length+1}`,version:(old?.version||0)+1,created_at:old?.created_at||now,updated_at:now};
       if(old) Object.assign(old,row);else s.applications.push(row);return row;
     });
+  }
+  applicationAction(id,action) {
+    if(!['archive','restore'].includes(action))throw Error('Невідома дія.');
+    return this.repository.transaction(s=>{const a=s.applications.find(a=>a.id===id&&!a.deleted_at);if(!a)throw Error('Заявку не знайдено.');a.archived_at=action==='archive'?new Date().toISOString():null;a.version++;a.updated_at=new Date().toISOString();});
   }
   deleteApplication(id,confirmed) { if(!confirmed) throw Error('Потрібне підтвердження.'); return this.repository.transaction(s=>{const a=s.applications.find(a=>a.id===id&&!a.deleted_at);if(!a)throw Error('Заявку не знайдено.');a.deleted_at=new Date().toISOString();a.version++;}); }
   addRelated(table,input) {

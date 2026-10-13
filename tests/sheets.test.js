@@ -159,3 +159,14 @@ test('Gateway: відмова без налаштувань, порожня/чу
   for(const [active,effective] of [['',props.CRM_OWNER_EMAIL],['other@example.invalid',props.CRM_OWNER_EMAIL],[props.CRM_OWNER_EMAIL,'other@example.invalid']])assert.throws(()=>Gateway.authorize(properties,session(active,effective)));
   props.CRM_ENABLED='false';assert.throws(()=>Gateway.authorize(properties,session(props.CRM_OWNER_EMAIL,props.CRM_OWNER_EMAIL)));
 });
+
+test('Sheets: редагування окремих вкладок не змінює схему чи наявні профілі',()=>{
+ const {book,repo,service}=fixture(),s=service();const c=s.saveClient({...client,geography:'Демо: область',competencies:'Демо: навички'});
+ const headers=[...book.sheets.values()].map(sheet=>sheet.rows[0].slice());
+ const updated=s.saveClient({legal_name:'Демо: Перейменовано',type:c.type,status:c.status,location:'Демо: місто',sectors:['Культура']},c.id,c.version);
+ assert.equal(updated.capacity_note,client.capacity_note);assert.equal(updated.geography,'Демо: область');
+ s.saveClient({legal_name:updated.legal_name,type:updated.type,status:updated.status,capacity_note:'Демо: нова команда'},c.id,updated.version);
+ const reopened=service().data().clients[0];assert.equal(reopened.location,'Демо: місто');assert.equal(reopened.competencies,'Демо: навички');assert.equal(reopened.capacity_note,'Демо: нова команда');
+ assert.deepEqual([...book.sheets.values()].map(sheet=>sheet.rows[0].slice()),headers);
+ assert.equal(normalize(repo().read()).client_profiles.length,1);
+});

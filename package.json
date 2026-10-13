@@ -1,8 +1,8 @@
 {
   "name": "grant-consulting-crm",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Локальний каркас CRM на вигаданих даних",
+  "description": "Персональна CRM для Google Apps Script та Google Sheets",
   "scripts": {
     "test": "node --test",
     "build": "node scripts/build.js",

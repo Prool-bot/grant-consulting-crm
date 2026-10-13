@@ -20,6 +20,9 @@ function query(repository,request) {
   const service=new Core.CrmService(local), data=service.data(), args=request.args||{};
   let result;
   switch(request.action) {
+    case 'listData':
+      if(!['clients','applications','contacts','interactions'].includes(args.table))throw Error('Невідомий розділ.');
+      result=page(data[args.table].filter(row=>!['contacts','interactions'].includes(args.table)||data.clients.some(c=>c.id===row.client_id)),args);break;
     case 'listClients': result=service.listClients(args);break;
     case 'listApplications': result=page(data.applications.filter(a=>!args.client_id||a.client_id===args.client_id),args);break;
     case 'getClient': result=data.clients.find(c=>c.id===args.id)||null;break;
@@ -40,6 +43,7 @@ function mutate(repository,uuid,request) {
     case 'saveClient': return service.saveClient(a.input,a.id,a.version);
     case 'saveApplication': return service.saveApplication(a.input,a.id,a.version);
     case 'clientAction': return service.clientAction(a.id,a.action,a.confirmed===true);
+    case 'applicationAction': return service.applicationAction(a.id,a.action);
     case 'deleteApplication': return service.deleteApplication(a.id,a.confirmed===true);
     case 'addRelated': return service.addRelated(a.table,a.input);
     default: throw Error('Невідома дія.');
