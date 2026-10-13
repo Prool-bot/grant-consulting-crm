@@ -35,11 +35,23 @@ const {chromium}=require('playwright');
   await page.locator('#add-related').click();await page.locator('[name="full_name"]').fill('Демо: тестовий контакт');await page.getByRole('button',{name:'Додати запис',exact:true}).click();await page.locator('#add-related').waitFor();assert.match(await page.locator('#profile-content').innerText(),/тестовий контакт/);
   await page.getByRole('button',{name:'Історія',exact:true}).click();await page.locator('#add-related').click();await page.locator('[name="summary"]').fill('Демо: тестова взаємодія');await page.getByRole('button',{name:'Додати запис',exact:true}).click();await page.locator('#add-related').waitFor();
   await page.getByRole('button',{name:'Заявки',exact:true}).click();assert.equal(await page.locator('main form').count(),0);
+  assert.equal(await page.locator('.client-applications th').count(),7);
+  assert.equal(await page.locator('.application-counts strong').count(),7);
+  for(const key of ['application_no','title','grant','submission_at','deadline','amount','status']){
+   await page.locator('[data-sort="'+key+'"]').click();
+   const first=await page.locator('[data-column="'+key+'"]').getAttribute('aria-sort');
+   await page.locator('[data-sort="'+key+'"]').click();
+   assert.notEqual(await page.locator('[data-column="'+key+'"]').getAttribute('aria-sort'),first);
+  }
+  await page.setViewportSize({width:360,height:800});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  assert.ok(await page.locator('.table-scroll').evaluate(e=>e.scrollWidth>e.clientWidth));
+  await page.setViewportSize({width:1440,height:1000});
   await page.locator('#archive').click();await page.getByRole('button',{name:'Відновити з архіву',exact:true}).waitFor();await page.locator('#archive').click();await page.getByRole('button',{name:'Архівувати',exact:true}).waitFor();
   await page.goto(base+'#clients');await page.locator('a[href="#profile"]').click();assert.equal(await page.locator('form input,form select,form textarea').count(),5);
   await page.locator('[name="legal_name"]').fill('Демо: UI клієнт');await page.getByRole('button',{name:'Зберегти клієнта',exact:true}).click();await page.locator('#edit-client').waitFor();
   await page.getByRole('link',{name:'+ Заявка клієнта',exact:true}).click();await page.locator('[name="title"]').fill('Демо: UI заявка');await page.locator('[name="grant"]').fill('Демо: Конкурс');await page.locator('[name="donor"]').fill('Демо: Донор');await page.getByRole('button',{name:'Зберегти заявку',exact:true}).click();await page.locator('#application-rows').waitFor();
-  await page.getByRole('link',{name:'Демо: UI заявка',exact:true}).click();await page.locator('#archive-application').click();await page.getByRole('button',{name:'Відновити з архіву',exact:true}).waitFor();await page.locator('#archive-application').click();await page.getByRole('button',{name:'Архівувати',exact:true}).waitFor();
+  await page.getByRole('link',{name:'Демо: UI заявка',exact:true}).click();assert.equal(await page.locator('main form').count(),0);await page.locator('#edit-application').click();await page.locator('#archive-application').click();await page.getByRole('button',{name:'Відновити з архіву',exact:true}).waitFor();await page.locator('#archive-application').click();await page.getByRole('button',{name:'Архівувати',exact:true}).waitFor();
   await page.locator('#delete-application').click();await page.getByRole('button',{name:'Підтвердити видалення',exact:true}).click();await page.locator('#application-rows').waitFor();assert.equal(await page.getByRole('link',{name:'Демо: UI заявка',exact:true}).count(),0);
   await page.goto(base+'#clients');await page.locator('#query').fill('Демо: UI клієнт');await page.locator('#results a').click();await page.locator('#delete-client').click();await page.getByRole('button',{name:'Підтвердити видалення',exact:true}).click();await page.locator('#results').waitFor();assert.equal(await page.locator('#results a').count(),0);
   await page.locator('#query').fill('');await page.setViewportSize({width:360,height:800});
