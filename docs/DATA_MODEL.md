@@ -33,3 +33,14 @@
 - `official_url` — лише HTTPS, збереження нормалізованого URL для перевірки дублів.
 - `deadline_at` і `due_at` не повинні втрачати часовий пояс.
 - Дати й суми не підміняти вигаданими значеннями; невідоме = порожнє поле.
+
+## Реалізоване розширення CRM 1.2
+
+Чинний контракт і ручна міграція: [V1_2_FIRST_RELEASE.md](V1_2_FIRST_RELEASE.md). Старі повні ISO з поясом збережено; календарні поля також приймають `YYYY-MM-DD` без часу. Службові `created_at`, `updated_at`, `deleted_at` лишаються ISO-мітками.
+
+- `applications.official_url` — необов’язкове HTTPS-посилання конкурсу, у JSON заявки.
+- `documents`: id, version, client_id, application_id?, client_partner_id?, title, category, url, document_date?, expiry_at?, note, created_at, updated_at, deleted_at?. Зберігаються лише метадані; файл та його права залишаються в Drive. Це уточнення першого випуску документів замість майбутнього прямого керування file_id/folder_id.
+- `partners`: id, version, name, type, geography, sector, contacts, notes, created_at, updated_at. Спільний довідник.
+- `client_partners`: id, version, client_id, partner_id, role, status, start_date, comments, memorandum (boolean), memorandum_date, memorandum_expiry, memorandum_document_id, support_letter (boolean), support_date, support_document_id, created_at, updated_at, deleted_at?. Один активний зв’язок на пару UUID.
+
+Усі три нові проєкції використовують колонки `id`, `client_id`, `version`, `data_json`; у партнера client_id порожній. Пов’язані заявки, партнерства та документи належать тому самому клієнту. М’яке видалення зберігає історичні зв’язки. `schema:2` у керівній комірці блокує стару збірку; `modelVersion:12` у знімку визначає нові колекції. Нові аркуші створює лише приватний ручний `migrateCrm12_` після незалежної копії; автоматичного оновлення робочої бази немає.

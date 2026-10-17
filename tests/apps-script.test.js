@@ -30,9 +30,17 @@ test('Apps Script: зібраний сервер проходить налашт
   assert.equal(context.crmMutate({...request,requestId:randomUUID()}).code,'CONFLICT');
   const denied=context.crmMutate({...request,requestId:randomUUID(),revision:1,action:'restore'});assert.equal(denied.ok,false);
   assert.equal(context.backupCrm_().ok,true);
+  assert.equal(context.crmQuery({action:'listData',args:{table:'documents'}}).code,'MIGRATION_REQUIRED');
+  assert.equal(context.migrateCrm12_(1,true).ok,true);
+  assert.equal(context.inspectCrm12_().value.modelVersion,12);
+  const docRequest={requestId:randomUUID(),revision:2,action:'saveCatalog',args:{table:'documents',input:{client_id:created.value.id,title:'Демо: Документ',category:'other',url:'https://docs.google.com/document/d/synthetic-document/edit'}}};
+  assert.equal(context.crmMutate(docRequest).ok,true);
+  assert.equal(context.crmMutate(docRequest).ok,true);
+  assert.equal(context.inspectCrm12_().value.counts.documents,1);
+  assert.equal(context.CrmDomain.normalizeUrl('https://example.invalid/grant'),'https://example.invalid/grant');
   const count=opens;identity='other@example.invalid';
   assert.equal(context.crmQuery({action:'listClients'}).ok,false);assert.equal(context.crmMutate(request).ok,false);
-  assert.equal(context.setupCrm_().ok,false);assert.equal(context.backupCrm_().ok,false);assert.equal(opens,count);
+  assert.equal(context.migrateCrm12_(1,true).ok,false);assert.equal(context.inspectCrm12_().ok,false);assert.equal(context.crmMutate(docRequest).ok,false);assert.equal(context.setupCrm_().ok,false);assert.equal(context.backupCrm_().ok,false);assert.equal(opens,count);
   assert.match(context.doGet(),/Доступ закрито/);
   const safe=context.crmSafe_(()=>{throw Error('synthetic-sensitive-marker');});assert.doesNotMatch(JSON.stringify(safe),/synthetic-sensitive-marker/);
 });

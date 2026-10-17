@@ -28,6 +28,6 @@ window.addEventListener('hashchange', () => { render(); main.focus(); });
 async function startCrm(){
  main.innerHTML='<h1>Завантаження CRM…</h1>';
  try{await initializeCrm();ready=true;render();}
- catch{main.innerHTML='<h1>CRM недоступна</h1><p>Перевірте підключення, вхід власника та налаштування сховища.</p><button id="retry-load">Повторити</button>';main.querySelector('button').onclick=startCrm;}
+ catch(error){main.innerHTML='<h1>CRM недоступна</h1><p>'+(error.code==='MIGRATION_REQUIRED'?'Потрібна ручна міграція CRM 1.2 після створення приватної резервної копії. Дані не змінено. Інструкція: docs/V1_2_FIRST_RELEASE.md.':'Перевірте підключення, вхід власника та налаштування сховища.')+'</p><button id="retry-load">Повторити</button>';main.querySelector('button').onclick=startCrm;}
 }
 startCrm();

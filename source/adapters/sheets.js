@@ -4,6 +4,7 @@ const Core = typeof module !== 'undefined' ? require('../server/core') : root.Cr
 const Domain = typeof module !== 'undefined' ? require('../shared/domain') : root.CrmDomain;
 const copy = value => JSON.parse(JSON.stringify(value));
 const TABLES = ['clients','client_profiles','contacts','interactions','grants','applications'];
+const tablesFor = state => state.modelVersion===12 ? [...TABLES,...Core.COLLECTIONS] : TABLES;
 const HEADER = ['id','client_id','version','data_json'];
 const PROFILE = ['sectors','geography','funding_needs','grants_experience','target_groups','prior_donors','capacity_note','competencies','portfolio','eligibility_notes'];
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[1-5][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
@@ -11,18 +12,18 @@ const empty = () => ({version:2,revision:0,sequence:0,clients:[],applications:[]
 function validate(state) {
   new Core.LocalRepository().validate(state);
   if(!Number.isSafeInteger(state.revision) || !Number.isSafeInteger(state.sequence) || state.revision < 0 || state.sequence < 0 || !Array.isArray(state.receipts)) throw Error('Пошкоджено метадані бази.');
-  for(const table of ['clients','applications','contacts','interactions']) {
+  for(const table of ['clients','applications','contacts','interactions',...(state.modelVersion===12?Core.COLLECTIONS:[])]) {
     for(const row of state[table]) {
       if(!UUID.test(row.id) || !Number.isInteger(row.version) || row.version < 1) throw Error('Некоректний UUID або версія запису.');
       if(table==='contacts' && (!row.full_name?.trim() || (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)))) throw Error('Некоректний контакт.');
-      if(table==='interactions' && (!row.summary?.trim() || !Domain.validDate(row.happened_at))) throw Error('Некоректна взаємодія.');
+      if(table==='interactions' && (!row.summary?.trim() || (row.happened_at && !Domain.validDate(row.happened_at)))) throw Error('Некоректна взаємодія.');
       if(row.contact_id && !state.contacts.some(c=>c.id===row.contact_id && c.client_id===row.client_id)) throw Error('Порушено зв’язок контакту.');
     }
   }
   if(new Set(state.receipts.map(r=>r.id)).size!==state.receipts.length || state.receipts.some(r=>!UUID.test(r.id)||typeof r.fingerprint!=='string')) throw Error('Пошкоджено журнал повторів.');
 }
 function normalize(state) {
-  const tables = Object.fromEntries(TABLES.map(t=>[t,[]]));
+  const tables = Object.fromEntries(tablesFor(state).map(t=>[t,[]]));
   for(const original of state.clients) {
     const client=copy(original), profile={id:client.id,client_id:client.id,version:client.version};
     for(const key of PROFILE) if(Object.hasOwn(client,key)) { profile[key]=client[key];delete client[key]; }
@@ -37,6 +38,7 @@ function normalize(state) {
     tables.applications.push(app);
   }
   tables.contacts=copy(state.contacts);tables.interactions=copy(state.interactions);
+  if(state.modelVersion===12)for(const table of Core.COLLECTIONS)tables[table]=copy(state[table]);
   return tables;
 }
 class SheetsRepository {
@@ -53,7 +55,7 @@ class SheetsRepository {
     const raw=this.cell('_crm_control').getValue();
     if(!raw) return {schema:1,committed:null,pending:null};
     const value=JSON.parse(raw);
-    if(value.schema!==1 || !Object.hasOwn(value,'committed') || !Object.hasOwn(value,'pending'))throw Error('Невідома схема бази.');
+    if(![1,2].includes(value.schema) || !Object.hasOwn(value,'committed') || !Object.hasOwn(value,'pending'))throw Error('Невідома схема бази.');
     return value;
   }
   setup() {
@@ -77,7 +79,7 @@ class SheetsRepository {
         if(count && journal.getRange(2,1,count,1).getValues().some(([value])=>value!=='j:'+JSON.stringify(empty())))throw Error('Втрачено метадані журналу. Автоматичне очищення заборонено.');
         this.commit(empty(),control);
       } else this.recover(control);
-      return {schema:1,tables:TABLES.slice()};
+      return {schema:this.control().schema,tables:tablesFor(this.recover()).slice()};
     });
   }
   writeControl(control) { this.cell('_crm_control').setValue(JSON.stringify(control));this.flush(); }
@@ -91,7 +93,7 @@ class SheetsRepository {
   }
   project(state) {
     const tables=normalize(state);
-    for(const name of TABLES) {
+    for(const name of tablesFor(state)) {
       const sheet=this.sheet(name), rows=tables[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
       if(rows.some(r=>r[3].length>45000))throw Error('Запис перевищує безпечний розмір комірки.');
       const previous=sheet.getLastRow()-1;
@@ -105,14 +107,14 @@ class SheetsRepository {
     if(control.pending) {
       const next=this.journal(control.pending);
       this.project(next);
-      this.writeControl({schema:1,committed:control.pending,pending:null});
+      this.writeControl({schema:next.modelVersion===12?2:1,committed:control.pending,pending:null});
       return next;
     }
     if(!control.committed)throw Error('Базу не налаштовано.');
     const state=this.journal(control.committed);
     // Ручне редагування Sheets не є API CRM: відмовляємо, не стираючи змін власника.
     const expected=normalize(state);
-    for(const name of TABLES) {
+    for(const name of tablesFor(state)) {
       const sheet=this.sheet(name), count=sheet.getLastRow()-1;
       if(JSON.stringify(sheet.getRange(1,1,1,HEADER.length).getValues()[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
       const rows=count?sheet.getRange(2,1,count,HEADER.length).getValues():[];
@@ -135,9 +137,9 @@ class SheetsRepository {
     const pending={start,count:chunks.length,hash:this.hash(raw)};
     // Журнал не очищається: попередня підтверджена версія залишається доступною.
     this.journal(pending);
-    this.writeControl({schema:1,committed:control.committed,pending});
+    this.writeControl({schema:next.modelVersion===12?2:1,committed:control.committed,pending});
     this.project(next);
-    this.writeControl({schema:1,committed:pending,pending:null});
+    this.writeControl({schema:next.modelVersion===12?2:1,committed:pending,pending:null});
   }
   read() { return this.locked(()=>copy(this.recover())); }
   transaction(change) {
@@ -165,17 +167,43 @@ class SheetsRepository {
       if(control.pending)throw Error('Спочатку завершіть очікувану операцію повторним читанням.');
       const state=this.journal(control.committed);
       if(state.revision!==expectedRevision)throw Error('Конфлікт ревізії.');
-      for(const name of TABLES)if(JSON.stringify(this.sheet(name).getRange(1,1,1,HEADER.length).getValues()[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
+      for(const name of tablesFor(state))if(JSON.stringify(this.sheet(name).getRange(1,1,1,HEADER.length).getValues()[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
       this.project(state);
       return {revision:state.revision};
+    });
+  }
+  migrate12(expectedRevision,backupConfirmed=false) {
+    if(backupConfirmed!==true||!Number.isSafeInteger(expectedRevision))throw Error('Потрібні ревізія та підтвердження незалежної приватної копії.');
+    return this.locked(()=>{
+      const state=this.recover(),control=this.control();
+      if(state.modelVersion===12) {
+        if(state.migration12?.fromRevision!==expectedRevision)throw Error('Конфлікт ревізії міграції.');
+        return {revision:state.revision,migrated:true};
+      }
+      if(state.revision!==expectedRevision)throw Error('Конфлікт ревізії. Створіть свіжу резервну копію.');
+      // Підтверджений старий знімок залишається в журналі; зовнішню копію створює власник.
+      for(const name of Core.COLLECTIONS) {
+        const sheet=this.spreadsheet.getSheetByName(name);
+        if(sheet&&(sheet.getLastRow()>1 || (sheet.getLastRow()&&JSON.stringify(sheet.getRange(1,1,1,HEADER.length).getValues()[0])!==JSON.stringify(HEADER))))throw Error('Несумісна структура нових каталогів.');
+      }
+      for(const name of Core.COLLECTIONS) {
+        const sheet=this.spreadsheet.getSheetByName(name)||this.spreadsheet.insertSheet(name);
+        if(!sheet.getLastRow())sheet.getRange(1,1,1,HEADER.length).setValues([HEADER]);
+      }
+      this.flush();
+      const next={...copy(state),modelVersion:12,documents:[],partners:[],client_partners:[],revision:state.revision+1,migration12:{fromRevision:state.revision,backup:control.committed}};
+      this.commit(next,control);
+      this.recover();return {revision:next.revision,migrated:true};
     });
   }
   restore(snapshot) {
     const restored=JSON.parse(snapshot);validate(restored);
     return this.transaction(state=>{
+      if(state.modelVersion!==12&&restored.modelVersion===12)throw Error('CRM12_MIGRATION_REQUIRED');
+      if(state.modelVersion===12&&restored.modelVersion!==12)throw Error('Старий знімок не містить каталогів CRM 1.2. Відновлюйте його в окремій базі.');
       const {revision,sequence,receipts}=state;
       // Старі форми не повинні збігтися з версіями після відновлення.
-      for(const table of ['clients','applications','contacts','interactions'])for(const row of restored[table])row.version=Math.max(row.version,state[table].find(r=>r.id===row.id)?.version||0)+1;
+      for(const table of ['clients','applications','contacts','interactions',...(restored.modelVersion===12?Core.COLLECTIONS:[])])for(const row of restored[table])row.version=Math.max(row.version,state[table].find(r=>r.id===row.id)?.version||0)+1;
       Object.assign(state,restored,{revision,sequence:Math.max(sequence,restored.sequence),receipts});
     });
   }

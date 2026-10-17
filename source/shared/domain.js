@@ -5,9 +5,24 @@
   const taskStatuses = { todo: 'Заплановано', in_progress: 'У роботі', completed: 'Виконано', cancelled: 'Скасовано' };
   function uuid() { return globalThis.crypto.randomUUID(); }
   function validDate(value) {
+    if (dateOnly(value)) return true;
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value || '')) return false;
     const day = value.slice(0, 10);
     return Number.isFinite(Date.parse(value)) && new Date(day + 'T00:00:00Z').toISOString().slice(0, 10) === day;
+  }
+  function dateOnly(value) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value+'T00:00:00Z').toISOString().slice(0,10) === value;
+  }
+  function calendarDate(value) {
+    if (dateOnly(value)) return value;
+    if (!validDate(value)) return '';
+    const parts = new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));
+    const get = key => parts.find(p=>p.type===key).value;
+    return get('year')+'-'+get('month')+'-'+get('day');
+  }
+  function dateOrder(value) {
+    if (!validDate(value)) return null;
+    return calendarDate(value)+(dateOnly(value)?'':'T'+new Date(value).toISOString());
   }
   function validateClient(client) {
     const errors = {};
@@ -15,15 +30,21 @@
     if (!Object.hasOwn(types, client.type)) errors.type = 'Оберіть тип клієнта.';
     if (!Object.hasOwn(statuses, client.status)) errors.status = 'Оберіть коректний статус.';
     if (client.edrpou_optional && client.type !== 'individual' && !/^\d{8}$/.test(client.edrpou_optional)) errors.edrpou_optional = 'Код ЄДРПОУ має містити 8 цифр.';
-    if (client.next_action_at && !validDate(client.next_action_at)) errors.next_action_at = 'Вкажіть дату з часовим поясом.';
+    if (client.next_action_at && !validDate(client.next_action_at)) errors.next_action_at = 'Вкажіть коректну календарну дату.';
     return errors;
   }
   function normalizeUrl(value) {
-    const url = new URL(value);
-    if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Потрібне HTTPS-посилання без облікових даних.');
-    url.hash = '';
-    url.searchParams.sort();
-    return url.href;
+    // Apps Script V8 не надає WHATWG URL: однакова перевірка в обох середовищах.
+    if(typeof value !== 'string' || /[\s\\<>"'\x00-\x1f]/.test(value)) throw Error('Потрібне HTTPS-посилання без облікових даних.');
+    const match = /^https:\/\/([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::(\d{1,5}))?([/?#].*)?$/i.exec(value);
+    if(!match || match[1].split('.').some(label=>!label || label.startsWith('-') || label.endsWith('-')) || (match[2] && (+match[2]<1 || +match[2]>65535))) throw Error('Потрібне HTTPS-посилання без облікових даних.');
+    const tail=(match[3]||'/').split('#')[0]||'/';
+    return 'https://'+match[1].toLowerCase()+(match[2]?':'+match[2]:'')+(tail.startsWith('?')?'/'+tail:tail);
+  }
+  function driveUrl(value) {
+    const url=normalizeUrl(value);
+    if(!/^https:\/\/(?:drive\.google\.com\/file\/d\/[a-zA-Z0-9_-]+(?:[/?#]|$)|docs\.google\.com\/(?:document|spreadsheets|presentation|forms)\/d\/[a-zA-Z0-9_-]+(?:[/?#]|$))/.test(url)) throw Error('Вставте HTTPS-посилання на документ Google Drive.');
+    return url;
   }
   function validateGrant(grant) {
     const errors = {};
@@ -39,7 +60,7 @@
   function searchClients(clients, { query = '', type = '', status = '' } = {}) {
     const needle = query.trim().toLocaleLowerCase('uk');
     return clients.filter(c => (!type || c.type === type) && (!status || c.status === status) &&
-      [c.client_no, c.legal_name, c.short_name, c.location, c.geography, ...(c.contacts || []), ...(c.sectors || [])].join(' ').toLocaleLowerCase('uk').includes(needle));
+      [c.client_no, c.edrpou_optional, c.legal_name, c.short_name, c.location, c.geography, ...(c.contacts || []), ...(c.sectors || [])].join(' ').toLocaleLowerCase('uk').includes(needle));
   }
   function transitionTask(task, status, now = new Date().toISOString()) {
     if (!Object.hasOwn(taskStatuses, task.status) || !Object.hasOwn(taskStatuses, status)) throw new Error('Невідомий статус завдання.');
@@ -59,7 +80,7 @@
         else s[key][a.currency] = (s[key][a.currency] || 0) + a[field];
       }
       if (validDate(a.created_at) && (!s.last_application || Date.parse(a.created_at) > Date.parse(s.last_application))) s.last_application = a.created_at;
-      if (!a.archived_at && !['rejected', 'stopped', 'won'].includes(a.status) && validDate(a.deadline) && Date.parse(a.deadline) > now && (!s.next_deadline || Date.parse(a.deadline) < Date.parse(s.next_deadline))) s.next_deadline = a.deadline;
+      if (!a.archived_at && !['rejected', 'stopped', 'won'].includes(a.status) && validDate(a.deadline) && (dateOnly(a.deadline) ? a.deadline >= calendarDate(new Date(now).toISOString()) : Date.parse(a.deadline) > now) && (!s.next_deadline || dateOrder(a.deadline) < dateOrder(s.next_deadline))) s.next_deadline = a.deadline;
     }
     return index;
   }
@@ -70,14 +91,14 @@
     const missing = v => money ? !v.length : !v;
     if (missing(left) || missing(right)) return missing(left) === missing(right) ? 0 : missing(left) ? 1 : -1;
     const sign = direction === 'desc' ? -1 : 1;
-    if (!money) return (Date.parse(left) - Date.parse(right)) * sign;
+    if (!money) return dateOrder(left).localeCompare(dateOrder(right)) * sign;
     // Спочатку незмінні групи наборів валют; усередині — числовий вектор у порядку валют.
     const group = left.join('/').localeCompare(right.join('/'));
     if (group) return group;
     for (const currency of left) if (a[key][currency] !== b[key][currency]) return (a[key][currency] - b[key][currency]) * sign;
     return 0;
   }
-  const api = { types, statuses, taskStatuses, uuid, validDate, validateClient, validateGrant, normalizeUrl, searchClients, transitionTask, applicationSummaries, compareSummary };
+  const api = { types, statuses, taskStatuses, uuid, dateOnly, calendarDate, dateOrder, driveUrl, validDate, validateClient, validateGrant, normalizeUrl, searchClients, transitionTask, applicationSummaries, compareSummary };
   if (typeof module !== 'undefined') module.exports = api;
   else root.CrmDomain = api;
 })(globalThis);

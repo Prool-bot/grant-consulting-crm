@@ -9,7 +9,7 @@ const client={legal_name:'Демо: Інтеграція',type:'ngo',status:'act
 const app={title:'Демо: Заявка',grant:'Демо: Конкурс',donor:'Демо: Донор',status:'preparation',currency:'EUR',amount:null};
 function fixture(){
  const book=new FakeSheets();const hash=s=>createHash('sha256').update(s).digest('hex');
- const repo=options=>new SheetsRepository({spreadsheet:book,lock:book.lock(),flush:()=>book.flush(),hash,...options});repo().setup();
+ const repo=options=>new SheetsRepository({spreadsheet:book,lock:book.lock(),flush:()=>book.flush(),hash,...options});repo().setup();repo().migrate12(0,true);
  const call=async(method,request)=>{try{return method==='crmQuery'?Gateway.query(repo(),request):Gateway.mutate(repo({expectedRevision:request.revision,request:{id:request.requestId,fingerprint:hash(JSON.stringify(request))}}),randomUUID,request);}catch(error){if(/Конфлікт|змінено або видалено/.test(error.message))error.code='CONFLICT';throw error;}};
  return {repo,call,service:new Service(call,randomUUID)};
 }

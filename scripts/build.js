@@ -19,8 +19,8 @@ let html = fs.readFileSync(path.join(root, 'source/web/index.html'), 'utf8')
 html=html.replace(/<script>[\s\S]*?<\/script>/g, block=>block.includes('CrmDemo =')||block.includes('root.CrmDemo')?'':block);
 html=html.replace('<head>', '<head><script>globalThis.CRM_REMOTE=true;</script>')
  .replace(/<a href="#tasks">.*?<\/a><a href="#grants">.*?<\/a>/, '')
- .replace(/<div class="sidebar-note">[\s\S]*?<\/div>/, '<div class="sidebar-note"><strong>CRM 1.0</strong><p>Google Sheets · лише власник</p></div>')
+ .replace(/<div class="sidebar-note">[\s\S]*?<\/div>/, '<div class="sidebar-note"><strong>CRM 1.2</strong><p>Google Sheets · лише власник</p></div>')
  .replace('Демонстрація</span>', 'Приватна CRM</span>')
- .replace(/<footer>[\s\S]*?<\/footer>/, '<footer>CRM 1.0 · Europe/Kyiv</footer>');
+ .replace(/<footer>[\s\S]*?<\/footer>/, '<footer>CRM 1.2 · Europe/Kyiv</footer>');
 fs.writeFileSync(path.join(out, 'apps-script/Index.html'), html);
-console.log('CRM 1.0 для Apps Script і локальну демонстрацію зібрано.');
+console.log('CRM 1.2 для Apps Script і локальну демонстрацію зібрано.');

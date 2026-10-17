@@ -21,8 +21,9 @@ function query(repository,request) {
   let result;
   switch(request.action) {
     case 'listData':
-      if(!['clients','applications','contacts','interactions'].includes(args.table))throw Error('Невідомий розділ.');
-      result=page(data[args.table].filter(row=>!['contacts','interactions'].includes(args.table)||data.clients.some(c=>c.id===row.client_id)),args);break;
+      if(!['clients','applications','contacts','interactions',...Core.COLLECTIONS].includes(args.table))throw Error('Невідомий розділ.');
+      if(Core.COLLECTIONS.includes(args.table)&&state.modelVersion!==12)throw Error('CRM12_MIGRATION_REQUIRED');
+      result=page(args.includeDeleted===true?state[args.table]:data[args.table].filter(row=>!['contacts','interactions'].includes(args.table)||data.clients.some(c=>c.id===row.client_id)),args);break;
     case 'listClients': result=service.listClients(args);break;
     case 'listApplications': result=page(data.applications.filter(a=>!args.client_id||a.client_id===args.client_id),args);break;
     case 'getClient': result=data.clients.find(c=>c.id===args.id)||null;break;
@@ -40,6 +41,8 @@ function mutate(repository,uuid,request) {
   // Для видалення/архівування М2 не мав аргументу версії: сервер вимагає
   // ревізію всього стану, яка перевіряється під тим самим ScriptLock.
   switch(request.action) {
+    case 'saveCatalog': return service.saveCatalog(a.table,a.input,a.id,a.version);
+    case 'removeCatalog': return service.removeCatalog(a.table,a.id,a.version,a.confirmed);
     case 'saveContact': return service.saveContact(a.input,a.id,a.version);
     case 'saveClient': return service.saveClient(a.input,a.id,a.version);
     case 'saveApplication': return service.saveApplication(a.input,a.id,a.version);
