@@ -10,19 +10,19 @@ function rpc(method,request){
 }
 class Service {
  constructor(call=rpc,uuid=()=>root.crypto.randomUUID()) {this.call=call;this.uuid=uuid;this.state=null;this.pending=null;this.busy=false;}
- data(){return this.state;}
+ data(){return this.view||this.state;}
  listClients(options){const repository=new Core.LocalRepository();repository.state=this.state;return new Core.CrmService(repository).listClients(options);}
  async reload(){
   // Сторінки публікуються в інтерфейсі лише після перевірки спільної ревізії.
-  const next={version:2,sequence:0};let revision;
-  for(const table of ['clients','applications','contacts','interactions']){
+  const next={version:2,modelVersion:12,sequence:0};let revision;
+  for(const table of ['clients','applications','contacts','interactions',...Core.COLLECTIONS]){
    next[table]=[];let page=0,result;
-   do{const response=await this.call('crmQuery',{action:'listData',args:{table,page,limit:100}});
+   do{const response=await this.call('crmQuery',{action:'listData',args:{table,page,limit:100,includeDeleted:true}});
     if(revision!==undefined&&revision!==response.revision)throw Error('Дані змінилися під час завантаження. Повторіть оновлення.');
     revision=response.revision;result=response.result;next[table].push(...result.items);page++;
    }while(next[table].length<result.total);
   }
-  next.revision=revision;next.sequence=Math.max(0,...next.clients.map(c=>Number(c.client_no)));this.state=next;
+  next.revision=revision;next.sequence=Math.max(0,...next.clients.map(c=>Number(c.client_no)));this.state=next;const repository=new Core.LocalRepository();repository.state=next;this.view=new Core.CrmService(repository).data();for(const table of ['contacts','interactions'])this.view[table]=this.view[table].filter(r=>this.view.clients.some(c=>c.id===r.client_id));
  }
  async mutate(action,args){
   if(this.busy)throw Error('Дочекайтеся завершення попереднього запису.');
@@ -32,7 +32,7 @@ class Service {
    // Та сама бізнес-валідація до мережевого виклику; зміни лише в тимчасовій копії.
    const repository=new Core.LocalRepository();repository.state=JSON.parse(JSON.stringify(this.state));
    const service=new Core.CrmService(repository,this.uuid);
-   const argumentsByAction={saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input]};
+   const argumentsByAction={saveCatalog:[args.table,args.input,args.id,args.version],removeCatalog:[args.table,args.id,args.version,args.confirmed],saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input]};
    service[action](...argumentsByAction[action]);
    this.pending={signature,request:JSON.parse(JSON.stringify({action,args,revision:this.state.revision,requestId:this.uuid()})),acknowledged:false};
   }
@@ -42,6 +42,8 @@ class Service {
    await this.reload();const result=this.pending.result;this.pending=null;return result;
   }catch(error){if(error.code==='CONFLICT'){this.pending=null;}throw error;}finally{this.busy=false;}
  }
+ saveCatalog(table,input,id,version){return this.mutate('saveCatalog',{table,input,id,version});}
+ removeCatalog(table,id,version,confirmed){return this.mutate('removeCatalog',{table,id,version,confirmed});}
  saveContact(input,id,version){return this.mutate('saveContact',{input,id,version});}
  saveClient(input,id,version){return this.mutate('saveClient',{input,id,version});}
  saveApplication(input,id,version){return this.mutate('saveApplication',{input,id,version});}

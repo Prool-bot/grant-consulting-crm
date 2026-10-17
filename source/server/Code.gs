@@ -19,6 +19,7 @@ function crmSafe_(action) {
   try { return {ok:true,value:action()}; }
   catch(error) {
     // Не повертаємо сирі помилки Google: вони можуть містити ID та приватні дані.
+    if(error.message==='CRM12_MIGRATION_REQUIRED')return {ok:false,code:'MIGRATION_REQUIRED',message:'Потрібна ручна міграція CRM 1.2 після приватного резервного копіювання. Зверніться до інструкції випуску; дані не змінено.'};
     var conflict=/Конфлікт|змінено або видалено/.test(error.message||'');
     return {ok:false,code:conflict?'CONFLICT':'UNAVAILABLE',message:conflict?
       'Дані змінено. Збережіть текст форми й оновіть дані перед новою спробою.':
@@ -52,4 +53,12 @@ function doGet() {
   } catch(error) {
     return HtmlService.createHtmlOutput('<html lang="uk"><meta charset="utf-8"><h1>Доступ закрито</h1></html>');
   }
+}
+
+function migrateCrm12_(expectedRevision,backupConfirmed) {
+  return crmSafe_(function(){return crmRepository_().migrate12(expectedRevision,backupConfirmed);});
+}
+
+function inspectCrm12_() {
+  return crmSafe_(function(){var state=crmRepository_().read();return {revision:state.revision,modelVersion:state.modelVersion||11,counts:Object.fromEntries(['clients','applications','contacts','interactions','documents','partners','client_partners'].map(function(key){return [key,(state[key]||[]).length];}))};});
 }

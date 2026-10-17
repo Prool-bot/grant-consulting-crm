@@ -1,5 +1,6 @@
 (function (root) {
   'use strict';
+  const D = typeof module !== 'undefined' ? require('./domain') : root.CrmDomain;
   const statuses = { assessment: 'Оцінювання', preparation: 'У роботі', review: 'Перевірка', submitted: 'Подано · рішення очікується', rejected: 'Відхилено', won: 'Виграно', stopped: 'Зупинено' };
   function select(rows, clients, { query = '', clientId = '', status = '', sort = 'deadline', direction = 'asc', grouped = false } = {}) {
     const names = new Map(clients.map(c => [c.id, c.legal_name]));
@@ -11,7 +12,7 @@
     const compare = (a, b) => String(a).localeCompare(String(b), 'uk', { numeric: true });
     return result.sort((a, b) => {
       if (grouped && a.client_id !== b.client_id) return compare(a.client, b.client) || compare(a.client_id, b.client_id);
-      const value = row => field === 'status' ? statuses[row.status] : ['deadline', 'submission_at'].includes(field) ? (row[field] && Number.isFinite(Date.parse(row[field])) ? Date.parse(row[field]) : null) : row[field];
+      const value = row => field === 'status' ? statuses[row.status] : ['deadline', 'submission_at'].includes(field) ? D.dateOrder(row[field]) : row[field];
       // Різні валюти впорядковуються окремими групами без конвертації.
       if (field === 'amount' && (a.currency || 'EUR') !== (b.currency || 'EUR')) return compare(a.currency || 'EUR', b.currency || 'EUR');
       const left = value(a);

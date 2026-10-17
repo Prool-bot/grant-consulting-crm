@@ -16,7 +16,7 @@ function registry() {
     </div>
     <div class="registry-title"><h1>Реєстр грантових заявок</h1><span id="application-count" role="status"></span></div>
     <p class="sr-only" id="table-help">Натисніть заголовок стовпця для сортування. На вузькому екрані прокручуйте таблицю горизонтально.</p>
-    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption class="sr-only">Грантові заявки</caption><thead><tr>${[['title','Заявка'],['client','Клієнт / досьє'],['grant','Грант / донор'],['deadline','Дедлайн'],['amount','Сума / валюта'],['status','Статус']].map(([key, title]) => `<th scope="col" data-column="${key}" aria-sort="none"><button data-sort="${key}">${title}<span aria-hidden="true"></span></button></th>`).join('')}</tr></thead><tbody id="application-rows"></tbody></table></div><p class="registry-note">${globalThis.CRM_REMOTE?'CRM 1.0 · Google Sheets · доступ лише власнику':'Локальна демонстрація · лише вигадані дані'}</p>`;
+    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption class="sr-only">Грантові заявки</caption><thead></thead><tbody id="application-rows"></tbody></table></div><p class="registry-note">${globalThis.CRM_REMOTE?'CRM 1.2 · Google Sheets · доступ лише власнику':'Локальна демонстрація · лише вигадані дані'}</p>`;
   const query = document.querySelector('#application-query'), client = document.querySelector('#application-client'), status = document.querySelector('#application-status'), group = document.querySelector('#application-group');
   query.value = registryState.query; client.value = registryState.clientId; status.value = registryState.status; group.checked = registryState.grouped;
   const toggle = document.querySelector('#filter-toggle'), panel = document.querySelector('#application-filters');
@@ -29,6 +29,8 @@ function registry() {
     if (event.key === 'Escape') { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); }
   });
   const update = () => {
+    main.querySelector('thead').innerHTML='<tr>'+[['title','Заявка'],...(!registryState.grouped?[['client','Клієнт / досьє']]:[]),['grant','Грант / донор'],['deadline','Дедлайн'],['amount','Сума / валюта'],['status','Статус']].map(([key,title])=>'<th scope="col" data-column="'+key+'" aria-sort="none"><button data-sort="'+key+'">'+title+'<span aria-hidden="true"></span></button></th>').join('')+'</tr>';
+    main.querySelectorAll('[data-sort]').forEach(button=>button.onclick=()=>{registryState.direction=registryState.sort===button.dataset.sort&&registryState.direction==='asc'?'desc':'asc';registryState.sort=button.dataset.sort;update();});
     const active = Number(Boolean(registryState.query)) + Number(Boolean(registryState.status));
     document.querySelector('#active-filters').textContent = active ? ' (' + active + ')' : '';
     if (registryState.clientId && !data.clients.some(c=>c.id===registryState.clientId)) {registryState.clientId='';client.value='';}
@@ -43,11 +45,11 @@ function registry() {
     document.querySelector('#application-rows').innerHTML = rows.length ? rows.map(row => {
       let header = '';
       if (registryState.grouped && row.client_id !== previousClient) {
-        header = `<tr class="client-group"><th colspan="6"><a href="#profile/${row.client_id}">${escapeHtml(row.client)}</a> <span>· Заявок: ${rows.filter(r => r.client_id === row.client_id).length}</span></th></tr>`;
+        header = `<tr class="client-group"><th scope="rowgroup" colspan="5"><a href="#profile/${row.client_id}">${escapeHtml(row.client)}</a> <span>· Заявок: ${rows.filter(r => r.client_id === row.client_id).length}</span></th></tr>`;
         previousClient = row.client_id;
       }
-      return header + `<tr class="application-row ${row.status}"><td><a href="#application/${row.id}"><strong>${escapeHtml(row.title)}</strong></a><small>${escapeHtml(row.application_no)}</small></td><td><a href="#profile/${row.client_id}">${escapeHtml(row.client)}</a></td><td>${escapeHtml(row.grant)}<small>${escapeHtml(row.donor)}</small></td><td>${row.deadline ? escapeHtml(new Intl.DateTimeFormat('uk-UA', { timeZone: 'Europe/Kyiv' }).format(new Date(row.deadline))) : 'Не вказано'}<small>Europe/Kyiv</small></td><td class="numeric">${row.amount == null ? 'Не вказано' : new Intl.NumberFormat('uk-UA').format(row.amount)} <small>${escapeHtml(row.currency || "EUR")}</small></td><td>${CrmRegistry.statuses[row.status]}</td></tr>`;
-    }).join('') : '<tr><td colspan="6" class="empty">Заявок не знайдено. Змініть запит або скиньте фільтри.</td></tr>';
+      return header + `<tr class="application-row ${row.status}"><td><a href="#application/${row.id}"><strong>${escapeHtml(row.title)}</strong></a><small>${escapeHtml(row.application_no)}</small></td>${registryState.grouped?'':`<td><a href="#profile/${row.client_id}">${escapeHtml(row.client)}</a></td>`}<td>${escapeHtml(row.grant)}<small>${escapeHtml(row.donor)}</small></td><td>${applicationDate(row.deadline)}</td><td class="numeric">${row.amount == null ? 'Не вказано' : new Intl.NumberFormat('uk-UA').format(row.amount)} <small>${escapeHtml(row.currency || "EUR")}</small></td><td>${CrmRegistry.statuses[row.status]}</td></tr>`;
+    }).join('') : '<tr><td colspan="'+(registryState.grouped?5:6)+'" class="empty">Заявок не знайдено. Змініть запит або скиньте фільтри.</td></tr>';
   };
   for (const [element, key] of [[query, 'query'], [client, 'clientId'], [status, 'status']]) element.addEventListener('input', () => { registryState[key] = element.value; update(); });
   group.addEventListener('change', () => { registryState.grouped = group.checked; update(); });

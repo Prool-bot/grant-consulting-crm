@@ -8,7 +8,7 @@ function setup(rows=[]){
  const elements=new Map();
  const content={innerHTML:'',querySelector:key=>{if(!elements.has(key))elements.set(key,{innerHTML:''});return elements.get(key);},querySelectorAll:()=>[]};
  const data={clients:[{id:'demo-client',legal_name:'Демо: Клієнт'}],applications:rows};
- const context=vm.createContext({Intl,Date,CrmRegistry:R,CrmCore:{statuses:R.statuses},data,main:content,window:{addEventListener(){}},document:{addEventListener(){}},heading:t=>'<h1>'+t+'</h1>',escapeHtml:v=>String(v??'').replaceAll('<','&lt;').replaceAll('>','&gt;')});
+ const context=vm.createContext({D:require('../source/shared/domain'),Intl,Date,CrmRegistry:R,CrmCore:{statuses:R.statuses},data,main:content,window:{addEventListener(){}},document:{addEventListener(){}},heading:t=>'<h1>'+t+'</h1>',escapeHtml:v=>String(v??'').replaceAll('<','&lt;').replaceAll('>','&gt;')});
  vm.runInContext(fs.readFileSync('source/web/m2.js','utf8'),context);
  context.service={data:()=>data};vm.runInContext('crm=service',context);
  return {context,content};
