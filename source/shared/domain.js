@@ -1,6 +1,6 @@
 (function (root) {
   'use strict';
-  const types = { ngo: 'ГО', foundation: 'Благодійний фонд', company: 'Компанія', entrepreneur: 'ФОП', individual: 'Фізична особа' };
+  const types = { ngo: 'ГО', foundation: 'Благодійний фонд', company: 'Компанія', entrepreneur: 'ФОП', individual: 'Фізична особа', territorial_community: 'Територіальна громада', state_institution: 'Державна установа', institute: 'Інститут', communal_institution: 'Комунальна установа' };
   const statuses = { potential: 'Потенційний', negotiation: 'Переговори', active: 'Активний', paused: 'Пауза', completed: 'Завершений', archived: 'Архів' };
   const taskStatuses = { todo: 'Заплановано', in_progress: 'У роботі', completed: 'Виконано', cancelled: 'Скасовано' };
   function uuid() { return globalThis.crypto.randomUUID(); }
@@ -24,6 +24,12 @@
     if (!validDate(value)) return null;
     return calendarDate(value)+(dateOnly(value)?'':'T'+new Date(value).toISOString());
   }
+  const socialPlatforms = {facebook:'Facebook',instagram:'Instagram',telegram:'Telegram',linkedin:'LinkedIn',youtube:'YouTube',tiktok:'TikTok',twitter:'X/Twitter',other:'Інша'};
+  function organizationAge(client, now = new Date().toISOString()) {
+    const day=calendarDate(now), registered=client.registration_date;
+    if(client.type==='individual' || !dateOnly(registered) || !day || registered>day) return null;
+    return Number(day.slice(0,4))-Number(registered.slice(0,4))-(day.slice(5)<registered.slice(5)?1:0);
+  }
   function validateClient(client) {
     const errors = {};
     if (typeof client.legal_name !== 'string' || !client.legal_name.trim()) errors.legal_name = 'Вкажіть назву або ім’я.';
@@ -31,6 +37,16 @@
     if (!Object.hasOwn(statuses, client.status)) errors.status = 'Оберіть коректний статус.';
     if (client.edrpou_optional && client.type !== 'individual' && !/^\d{8}$/.test(client.edrpou_optional)) errors.edrpou_optional = 'Код ЄДРПОУ має містити 8 цифр.';
     if (client.next_action_at && !validDate(client.next_action_at)) errors.next_action_at = 'Вкажіть коректну календарну дату.';
+    if(client.nonprofit_code != null && client.nonprofit_code !== '' && (typeof client.nonprofit_code !== 'string' || !/^\d{4}$/.test(client.nonprofit_code))) errors.nonprofit_code='Код неприбутковості має бути рядком із 4 цифр.';
+    if(client.registration_date && (!dateOnly(client.registration_date) || client.registration_date>calendarDate(new Date().toISOString()))) errors.registration_date='Дата реєстрації має бути реальною датою не пізніше сьогодні.';
+    if(client.catalog_note != null && (typeof client.catalog_note!=='string' || client.catalog_note.length>2000)) errors.catalog_note='Примітка має містити не більше 2000 символів.';
+    if(client.social_links !== undefined) {
+      if(!Array.isArray(client.social_links)) errors.social_links='Соціальні мережі мають бути списком.';
+      else for(const link of client.social_links) {
+        try { if(!link || !Object.hasOwn(socialPlatforms,link.platform) || (link.label!==undefined && typeof link.label!=='string')) throw Error(); normalizeUrl(link.url); }
+        catch {errors.social_links='Оберіть платформу та вкажіть безпечне HTTPS-посилання.';}
+      }
+    }
     return errors;
   }
   function normalizeUrl(value) {
@@ -60,7 +76,7 @@
   function searchClients(clients, { query = '', type = '', status = '' } = {}) {
     const needle = query.trim().toLocaleLowerCase('uk');
     return clients.filter(c => (!type || c.type === type) && (!status || c.status === status) &&
-      [c.client_no, c.edrpou_optional, c.legal_name, c.short_name, c.location, c.geography, ...(c.contacts || []), ...(c.sectors || [])].join(' ').toLocaleLowerCase('uk').includes(needle));
+      [c.type, types[c.type], c.nonprofit_code, c.catalog_note, c.client_no, c.edrpou_optional, c.legal_name, c.short_name, c.location, c.geography, ...(c.contacts || []), ...(c.sectors || [])].join(' ').toLocaleLowerCase('uk').includes(needle));
   }
   function transitionTask(task, status, now = new Date().toISOString()) {
     if (!Object.hasOwn(taskStatuses, task.status) || !Object.hasOwn(taskStatuses, status)) throw new Error('Невідомий статус завдання.');
@@ -73,8 +89,10 @@
     const index = new Map();
     for (const a of applications) {
       if (a.deleted_at) continue;
-      if (!index.has(a.client_id)) index.set(a.client_id, { application_count: 0, requested: {}, awarded: {}, requested_unknown: 0, awarded_unknown: 0, next_deadline: null, last_application: null });
+      if (!index.has(a.client_id)) index.set(a.client_id, { application_count: 0, submitted_count: 0, won_count: 0, requested: {}, awarded: {}, requested_unknown: 0, awarded_unknown: 0, next_deadline: null, last_application: null });
       const s = index.get(a.client_id); s.application_count++;
+      if(validDate(a.submission_at)||['submitted','won','rejected'].includes(a.status))s.submitted_count++;
+      if(a.status==='won')s.won_count++;
       for (const [field, key] of [['amount', 'requested'], ['award_amount', 'awarded']]) {
         if (typeof a[field] !== 'number' || !Number.isFinite(a[field]) || !a.currency) s[key + '_unknown']++;
         else s[key][a.currency] = (s[key][a.currency] || 0) + a[field];
@@ -98,7 +116,7 @@
     for (const currency of left) if (a[key][currency] !== b[key][currency]) return (a[key][currency] - b[key][currency]) * sign;
     return 0;
   }
-  const api = { types, statuses, taskStatuses, uuid, dateOnly, calendarDate, dateOrder, driveUrl, validDate, validateClient, validateGrant, normalizeUrl, searchClients, transitionTask, applicationSummaries, compareSummary };
+  const api = { socialPlatforms, organizationAge, types, statuses, taskStatuses, uuid, dateOnly, calendarDate, dateOrder, driveUrl, validDate, validateClient, validateGrant, normalizeUrl, searchClients, transitionTask, applicationSummaries, compareSummary };
   if (typeof module !== 'undefined') module.exports = api;
   else root.CrmDomain = api;
 })(globalThis);
