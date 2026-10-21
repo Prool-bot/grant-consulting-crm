@@ -3,6 +3,11 @@ function crmHash_(text) {
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,text,Utilities.Charset.UTF_8)
     .map(function(byte) { return ('0'+((byte+256)%256).toString(16)).slice(-2); }).join('');
 }
+function crmDiagnostics_(properties) {
+  // Вмикається власником лише у відокремленому тестовому Script-проєкті.
+  if(properties.getProperty('CRM_ENVIRONMENT')!=='test'||properties.getProperty('CRM_DIAGNOSTICS_ENABLED')!=='true')return null;
+  return {enabled:true,emit:function(report){console.log(JSON.stringify(report));}};
+}
 function crmRepository_(request) {
   var properties=PropertiesService.getScriptProperties();
   CrmGateway.authorize(properties,Session);
@@ -11,6 +16,7 @@ function crmRepository_(request) {
   return new CrmSheets.SheetsRepository({
     spreadsheet:SpreadsheetApp.openById(id),lock:LockService.getScriptLock(),
     flush:function() { SpreadsheetApp.flush(); },hash:crmHash_,
+    diagnostics:crmDiagnostics_(properties),
     expectedRevision:request?request.revision:null,
     request:request?{id:request.requestId,fingerprint:crmHash_(JSON.stringify(request))}:null
   });

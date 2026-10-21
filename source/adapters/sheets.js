@@ -42,12 +42,36 @@ function normalize(state) {
   return tables;
 }
 class SheetsRepository {
-  constructor({spreadsheet,lock,flush,hash,expectedRevision=null,request=null}) {
-    Object.assign(this,{spreadsheet,lock,flush,hash,expectedRevision,request});
+  constructor({spreadsheet,lock,flush,hash,expectedRevision=null,request=null,diagnostics=null}) {
+    Object.assign(this,{spreadsheet,lock,hash,expectedRevision,request});
+    this.diagnostics=diagnostics?.enabled===true?diagnostics:null;
+    this.flush=()=>this.measure('flush',flush);
+  }
+  measure(stage,action) {
+    if(!this.diagnostics || !this.timings)return action();
+    const clock=()=>{try{const value=(this.diagnostics.clock||Date.now)();return Number.isFinite(value)?value:0;}catch{return 0;}};
+    const frame={start:clock(),children:0};this.frames.push(frame);let ok=false;
+    try{const result=action();ok=true;return result;}finally{
+      const ms=Math.max(0,clock()-frame.start);this.frames.pop();
+      if(this.frames.length)this.frames[this.frames.length-1].children+=ms;
+      const row=this.timings[stage]||(this.timings[stage]={calls:0,durationMs:0,selfMs:0,failures:0});
+      row.calls++;row.durationMs+=ms;row.selfMs+=Math.max(0,ms-frame.children);if(!ok)row.failures++;
+    }
   }
   locked(action) {
-    if(!this.lock.tryLock(10000)) throw Error('База зайнята. Повторіть запит із тим самим ідентифікатором.');
-    try { return action(); } finally { this.lock.releaseLock(); }
+    if(this.diagnostics){this.timings={};this.frames=[];}
+    try{return this.measure('repository_total',()=>{
+      this.measure('lock_wait',()=>{if(!this.lock.tryLock(10000))throw Error('База зайнята. Повторіть запит із тим самим ідентифікатором.');});
+      try{return action();}finally{this.lock.releaseLock();}
+    });}finally{
+      // Один обмежений звіт після звільнення lock. Збій діагностики не впливає на дані.
+      if(this.diagnostics){
+        const stages={};
+        for(const key of ['repository_total','lock_wait','control_read','journal_read','checksum','state_validate','sheets_verify','journal_write','sheets_update','flush'])if(this.timings[key])stages[key]={...this.timings[key]};
+        this.timings=null;
+        try{this.diagnostics.emit({kind:'crm_repository_timing',version:1,stages});}catch{}
+      }
+    }
   }
   sheet(name) { const sheet=this.spreadsheet.getSheetByName(name);if(!sheet)throw Error('Базу не налаштовано.');return sheet; }
   cell(name) { return this.sheet(name).getRange(2,1); }
@@ -88,8 +112,8 @@ class SheetsRepository {
     const chunks=this.sheet('_crm_journal').getRange(pointer.start,1,pointer.count,1).getValues();
     if(chunks.some(([v])=>typeof v!=='string'||!v.startsWith('j:')))throw Error('Пошкоджено журнал відновлення.');
     const raw=chunks.map(([v])=>v.slice(2)).join('');
-    if(this.hash(raw)!==pointer.hash)throw Error('Контрольна сума журналу не збігається.');
-    const state=JSON.parse(raw);validate(state);return state;
+    if(this.measure('checksum',()=>this.hash(raw))!==pointer.hash)throw Error('Контрольна сума журналу не збігається.');
+    const state=JSON.parse(raw);this.measure('state_validate',()=>validate(state));return state;
   }
   project(state,previousState=null) {
     // Попередній стан перевірено під тим самим lock; відновлення завжди проєктує всі аркуші.
@@ -114,6 +138,9 @@ class SheetsRepository {
     }
     if(!control.committed)throw Error('Базу не налаштовано.');
     const state=this.journal(control.committed);
+    this.verifyProjection(state);return state;
+  }
+  verifyProjection(state) {
     // Між викликами немає кешу: зміни поза CRM перевіряються щоразу.
     // Ручне редагування Sheets не є API CRM: відмовляємо, не стираючи змін власника.
     const expected=normalize(state);
@@ -125,20 +152,22 @@ class SheetsRepository {
       const wanted=expected[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
       if(JSON.stringify(rows)!==JSON.stringify(wanted))throw Error('Аркуші змінено поза CRM. Збережіть приватну копію та виконайте перевірене відновлення.');
     }
-    return state;
   }
   commit(next,control,previousState=null) {
-    validate(next);
+    this.measure('state_validate',()=>validate(next));
     // Обмеження перевіряються ДО публікації pending, щоб відновлення завжди могло завершитися.
     for(const rows of Object.values(normalize(next))) if(rows.some(r=>JSON.stringify(r).length>45000))throw Error('Запис перевищує безпечний розмір комірки.');
     const raw=JSON.stringify(next);
     if(raw.length>2000000)throw Error('Перевищено ліміт розміру бази М2.5. Потрібне погоджене розширення адаптера.');
     const chunks=raw.match(/[\s\S]{1,15000}/gu).map(v=>['j:'+v]);
+    const start=this.measure('journal_write',()=>{
     const sheet=this.sheet('_crm_journal'), start=sheet.getLastRow()+1;
     if(start+chunks.length>100000)throw Error('Журнал заповнено. Потрібне погоджене обслуговування та резервна копія.');
     if(start+chunks.length-1>sheet.getMaxRows())sheet.insertRowsAfter(sheet.getMaxRows(),start+chunks.length-1-sheet.getMaxRows());
-    sheet.getRange(start,1,chunks.length,1).setValues(chunks);this.flush();
-    const pending={start,count:chunks.length,hash:this.hash(raw)};
+    sheet.getRange(start,1,chunks.length,1).setValues(chunks);
+    return start;
+    });this.flush();
+    const pending={start,count:chunks.length,hash:this.measure('checksum',()=>this.hash(raw))};
     // Журнал не очищається: попередня підтверджена версія залишається доступною.
     this.journal(pending);
     this.writeControl({schema:next.modelVersion===12?2:1,committed:control.committed,pending});
@@ -212,6 +241,11 @@ class SheetsRepository {
       Object.assign(state,restored,{revision,sequence:Math.max(sequence,restored.sequence),receipts});
     });
   }
+}
+// Назви етапів фіксовані: аргументи, результати й помилки ніколи не потрапляють у звіт.
+for(const [method,stage] of [['control','control_read'],['journal','journal_read'],['verifyProjection','sheets_verify'],['project','sheets_update']]) {
+  const original=SheetsRepository.prototype[method];
+  SheetsRepository.prototype[method]=function(...args){return this.measure(stage,()=>original.apply(this,args));};
 }
 const api={SheetsRepository,normalize,validate,TABLES};
 if(typeof module!=='undefined')module.exports=api;else root.CrmSheets=api;
