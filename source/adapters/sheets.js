@@ -59,11 +59,13 @@ class SheetsRepository {
     }
   }
   locked(action) {
+    this.sheetHandles=new Map();
     if(this.diagnostics){this.timings={};this.frames=[];}
     try{return this.measure('repository_total',()=>{
       this.measure('lock_wait',()=>{if(!this.lock.tryLock(10000))throw Error('База зайнята. Повторіть запит із тим самим ідентифікатором.');});
       try{return action();}finally{this.lock.releaseLock();}
     });}finally{
+      this.sheetHandles=null;
       // Один обмежений звіт після звільнення lock. Збій діагностики не впливає на дані.
       if(this.diagnostics){
         const stages={};
@@ -73,7 +75,11 @@ class SheetsRepository {
       }
     }
   }
-  sheet(name) { const sheet=this.spreadsheet.getSheetByName(name);if(!sheet)throw Error('Базу не налаштовано.');return sheet; }
+  sheet(name) {
+    const sheet=this.sheetHandles?.get(name)||this.spreadsheet.getSheetByName(name);
+    if(!sheet)throw Error('Базу не налаштовано.');
+    this.sheetHandles?.set(name,sheet);return sheet;
+  }
   cell(name) { return this.sheet(name).getRange(2,1); }
   control() {
     const raw=this.cell('_crm_control').getValue();
@@ -122,9 +128,21 @@ class SheetsRepository {
       if(previousTables && JSON.stringify(tables[name])===JSON.stringify(previousTables[name]))continue;
       const sheet=this.sheet(name), rows=tables[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
       if(rows.some(r=>r[3].length>45000))throw Error('Запис перевищує безпечний розмір комірки.');
-      const previous=sheet.getLastRow()-1;
-      if(rows.length+1>sheet.getMaxRows())sheet.insertRowsAfter(sheet.getMaxRows(),rows.length+1-sheet.getMaxRows());
-      if(rows.length) sheet.getRange(2,1,rows.length,HEADER.length).setValues(rows);
+      const before=previousTables?.[name], previous=before?before.length:sheet.getLastRow()-1;
+      // Перевірений попередній стан визначає позиції тільки в цій транзакції.
+      // При recovery попередній стан невідомий: усі рядки записуються заново.
+      if(!before || rows.length>previous) {
+        const capacity=sheet.getMaxRows();
+        if(rows.length+1>capacity)sheet.insertRowsAfter(capacity,rows.length+1-capacity);
+      }
+      let start=-1;
+      for(let i=0;i<=rows.length;i++) {
+        const changed=i<rows.length && (!before || JSON.stringify(before[i])!==rows[i][3]);
+        if(changed && start<0)start=i;
+        if(!changed && start>=0) {
+          sheet.getRange(start+2,1,i-start,HEADER.length).setValues(rows.slice(start,i));start=-1;
+        }
+      }
       if(previous>rows.length)sheet.getRange(rows.length+2,1,previous-rows.length,HEADER.length).clearContent();
     }
     this.flush();
@@ -145,8 +163,10 @@ class SheetsRepository {
     // Ручне редагування Sheets не є API CRM: відмовляємо, не стираючи змін власника.
     const expected=normalize(state);
     for(const name of tablesFor(state)) {
-      const sheet=this.sheet(name), count=sheet.getLastRow()-1;
-      const values=sheet.getRange(1,1,Math.max(1,count+1),HEADER.length).getValues();
+      const sheet=this.sheet(name);
+      // Один прямокутний пакет містить заголовок і всі заповнені рядки,
+      // включно зі сторонніми рядками за очікуваною межею.
+      const values=sheet.getDataRange().getValues().map(row=>row.slice(0,HEADER.length));
       if(JSON.stringify(values[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
       const rows=values.slice(1);
       const wanted=expected[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
