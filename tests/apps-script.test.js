@@ -38,8 +38,11 @@ test('Apps Script: зібраний сервер проходить налашт
   assert.equal(context.crmMutate(docRequest).ok,true);
   assert.equal(context.inspectCrm12_().value.counts.documents,1);
   assert.equal(context.CrmDomain.normalizeUrl('https://example.invalid/grant'),'https://example.invalid/grant');
+  const bootstrap=context.crmQuery({action:'bootstrap'});assert.equal(bootstrap.ok,true);assert.equal(bootstrap.value.result.receipts,undefined);assert.equal(bootstrap.value.result.documents.length,1);
+  const syncRequest={requestId:randomUUID(),revision:bootstrap.value.revision,sync:true,action:'saveClient',args:{id:created.value.id,version:1,input:{legal_name:'Демо: RPC',type:'ngo',status:'active',catalog_note:'Демо'}}};
+  const synced=context.crmMutate(syncRequest);assert.equal(synced.ok,true);assert.equal(synced.value.protocol,1);assert.equal(synced.value.sync.changes.clients.length,1);assert.equal(context.crmMutate(syncRequest).value.sync.state.clients.length,1);
   const count=opens;identity='other@example.invalid';
-  assert.equal(context.crmQuery({action:'listClients'}).ok,false);assert.equal(context.crmMutate(request).ok,false);
+  assert.equal(context.crmQuery({action:'bootstrap'}).ok,false);assert.equal(context.crmMutate(syncRequest).ok,false);assert.equal(context.crmQuery({action:'listClients'}).ok,false);assert.equal(context.crmMutate(request).ok,false);
   assert.equal(context.migrateCrm12_(1,true).ok,false);assert.equal(context.inspectCrm12_().ok,false);assert.equal(context.crmMutate(docRequest).ok,false);assert.equal(context.setupCrm_().ok,false);assert.equal(context.backupCrm_().ok,false);assert.equal(opens,count);
   assert.match(context.doGet(),/Доступ закрито/);
   const safe=context.crmSafe_(()=>{throw Error('synthetic-sensitive-marker');});assert.doesNotMatch(JSON.stringify(safe),/synthetic-sensitive-marker/);

@@ -9,23 +9,47 @@ function rpc(method,request){
  });
 }
 class Service {
- constructor(call=rpc,uuid=()=>root.crypto.randomUUID()) {this.call=call;this.uuid=uuid;this.state=null;this.pending=null;this.busy=false;}
+ constructor(call=rpc,uuid=()=>root.crypto.randomUUID()) {this.call=call;this.uuid=uuid;this.state=null;this.pending=null;this.busy=false;this.metrics=[];this.loading=false;}
  data(){return this.view||this.state;}
- listClients(options){const repository=new Core.LocalRepository();repository.state=this.state;return new Core.CrmService(repository).listClients(options);}
+ listClients(options={}){
+  const minute=Math.floor(Date.now()/60000);
+  if(this.catalogMinute!==minute){this.catalogMinute=minute;this.catalogPages=new Map();}
+  const key=JSON.stringify(options);
+  if(!this.catalogPages.has(key)){if(this.catalogPages.size>=30)this.catalogPages.clear();this.catalogPages.set(key,this.reader.listClients(options));}
+  return JSON.parse(JSON.stringify(this.catalogPages.get(key)));
+ }
+ record(operation,start,ok){this.metrics.push({operation,durationMs:Date.now()-start,ok});if(this.metrics.length>50)this.metrics.shift();}
+ install(next){
+  const repository=new Core.LocalRepository();repository.validate(next);repository.state=next;
+  const reader=new Core.CrmService(repository),view=reader.data();
+  const ids=new Set(view.clients.map(c=>c.id));
+  for(const table of ['contacts','interactions'])view[table]=view[table].filter(r=>ids.has(r.client_id));
+  this.state=next;this.reader=reader;this.view=view;this.catalogMinute=null;
+ }
  async reload(){
-  // Сторінки публікуються в інтерфейсі лише після перевірки спільної ревізії.
-  const next={version:2,modelVersion:12,sequence:0};let revision;
-  for(const table of ['clients','applications','contacts','interactions',...Core.COLLECTIONS]){
-   next[table]=[];let page=0,result;
-   do{const response=await this.call('crmQuery',{action:'listData',args:{table,page,limit:100,includeDeleted:true}});
-    if(revision!==undefined&&revision!==response.revision)throw Error('Дані змінилися під час завантаження. Повторіть оновлення.');
-    revision=response.revision;result=response.result;next[table].push(...result.items);page++;
-   }while(next[table].length<result.total);
+  if(this.busy||this.loading)throw Error('Дочекайтеся завершення поточної операції.');
+  this.loading=true;const start=Date.now();let ok=false;
+  try{await this.loadSnapshot();ok=true;}finally{this.loading=false;this.record('reload',start,ok);}
+ }
+ async loadSnapshot(){
+  const response=await this.call('crmQuery',{action:'bootstrap',args:{}});
+  if(response.revision!==response.result?.revision)throw Error('Дані змінилися під час завантаження.');
+  if(this.state && response.revision<this.state.revision)throw Error('Застаріла відповідь сервера.');
+  this.install(response.result);
+ }
+ applySync(sync){
+  if(sync.state){if(sync.state.revision<this.state.revision)throw Error('Застаріла відповідь сервера.');this.install(sync.state);return;}
+  if(sync.baseRevision!==this.state.revision || sync.revision!==sync.baseRevision+1)throw Error('Неузгоджена ревізія відповіді.');
+  const next={...this.state,revision:sync.revision,sequence:sync.sequence};
+  for(const [table,rows] of Object.entries(sync.changes)){
+    if(!Core.DATA_TABLES.includes(table)||!Array.isArray(rows)||new Set(rows.map(r=>r.id)).size!==rows.length)throw Error('Некоректні зміни сервера.');
+    const updates=new Map(rows.map(r=>[r.id,r]));
+    next[table]=this.state[table].map(r=>{const value=updates.get(r.id)||r;updates.delete(r.id);return value;}).concat([...updates.values()]);
   }
-  next.revision=revision;next.sequence=Math.max(0,...next.clients.map(c=>Number(c.client_no)));this.state=next;const repository=new Core.LocalRepository();repository.state=next;this.view=new Core.CrmService(repository).data();for(const table of ['contacts','interactions'])this.view[table]=this.view[table].filter(r=>this.view.clients.some(c=>c.id===r.client_id));
+  this.install(next);
  }
  async mutate(action,args){
-  if(this.busy)throw Error('Дочекайтеся завершення попереднього запису.');
+  if(this.busy||this.loading)throw Error('Дочекайтеся завершення попереднього запису.');
   const signature=JSON.stringify({action,args});
   if(this.pending&&this.pending.signature!==signature)throw Error('Попередній запис не підтверджено. Поверніть поля до попередніх значень і повторіть збереження перед іншими змінами.');
   if(!this.pending){
@@ -34,13 +58,17 @@ class Service {
    const service=new Core.CrmService(repository,this.uuid);
    const argumentsByAction={saveCatalog:[args.table,args.input,args.id,args.version],removeCatalog:[args.table,args.id,args.version,args.confirmed],saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input]};
    service[action](...argumentsByAction[action]);
-   this.pending={signature,request:JSON.parse(JSON.stringify({action,args,revision:this.state.revision,requestId:this.uuid()})),acknowledged:false};
+   this.pending={signature,request:JSON.parse(JSON.stringify({action,args,sync:true,revision:this.state.revision,requestId:this.uuid()})),acknowledged:false};
   }
-  this.busy=true;
+  this.busy=true;const start=Date.now();let ok=false;
   try{
    if(!this.pending.acknowledged){this.pending.result=await this.call('crmMutate',this.pending.request);this.pending.acknowledged=true;}
-   await this.reload();const result=this.pending.result;this.pending=null;return result;
-  }catch(error){if(error.code==='CONFLICT'){this.pending=null;}throw error;}finally{this.busy=false;}
+   const response=this.pending.result;
+   if(response?.protocol===1){
+    try{this.applySync(response.sync);}catch{await this.loadSnapshot();}
+   }else await this.loadSnapshot();
+   const result=response?.protocol===1?response.result:response;this.pending=null;ok=true;return result;
+  }catch(error){if(error.code==='CONFLICT'){this.pending=null;}throw error;}finally{this.busy=false;this.record(action,start,ok);}
  }
  saveCatalog(table,input,id,version){return this.mutate('saveCatalog',{table,input,id,version});}
  removeCatalog(table,id,version,confirmed){return this.mutate('removeCatalog',{table,id,version,confirmed});}

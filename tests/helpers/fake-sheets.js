@@ -1,7 +1,7 @@
 'use strict';
 // Імітація лише використаних методів SpreadsheetApp; жодної мережі чи Google ID.
 class FakeSheets {
-  constructor() { this.sheets=new Map();this.calls=0;this.failAt=0;this.after=false;this.held=false; }
+  constructor() { this.reads=0;this.sheets=new Map();this.calls=0;this.failAt=0;this.after=false;this.held=false; }
   write(change) {
     this.calls++;
     if(this.calls===this.failAt&&!this.after)throw Error('Імітація квоти/обриву');
@@ -21,7 +21,7 @@ class FakeSheet {
   getLastRow() {for(let i=this.rows.length-1;i>=0;i--)if(this.rows[i]?.some(v=>v!==''&&v!=null))return i+1;return 0;}
   getRange(row,column,height=1,width=1) {
     if(row+height-1>this.maxRows||row<1||column<1||height<1||width<1)throw Error('Некоректний діапазон');
-    const get=()=>Array.from({length:height},(_,i)=>Array.from({length:width},(_,j)=>this.rows[row-1+i]?.[column-1+j]??''));
+    const get=()=>{this.book.reads++;return Array.from({length:height},(_,i)=>Array.from({length:width},(_,j)=>this.rows[row-1+i]?.[column-1+j]??''));};
     const put=values=>this.book.write(()=>{
       if(values.length!==height||values.some(r=>r.length!==width))throw Error('Розмір діапазону');
       for(let i=0;i<height;i++)for(let j=0;j<width;j++) {

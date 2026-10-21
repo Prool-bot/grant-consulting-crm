@@ -34,7 +34,7 @@ test('Втрачена відповідь після запису: незмін�
  await s.saveClient(client);assert.equal(repo().read().clients.length,1);assert.equal(s.pending,null);
 });
 test('Збій перечитування після успішного запису повторює лише читання',async()=>{
- const {call}=fixture();let fail=false,writes=0;const s=new Service(async(m,r)=>{if(m==='crmMutate'){writes++;fail=true;}else if(fail){fail=false;throw Error('Квота');}return call(m,r);},randomUUID);
+ const {call}=fixture();let fail=false,writes=0;const s=new Service(async(m,r)=>{if(m==='crmMutate'){writes++;fail=true;const response=await call(m,r);response.sync.baseRevision=-1;return response;}else if(fail){fail=false;throw Error('Квота');}return call(m,r);},randomUUID);
  await s.reload();await assert.rejects(s.saveClient(client));assert.ok(s.pending.acknowledged);await s.saveClient(client);assert.equal(writes,1);
 });
 test('Конфлікт вкладок не перезаписує нові дані; валідація не надсилає запит',async()=>{
@@ -42,15 +42,16 @@ test('Конфлікт вкладок не перезаписує нові да�
  await assert.rejects(s.saveClient({...client,legal_name:''}));assert.equal(s.pending,null);
  await s.saveClient(client);await assert.rejects(other.saveClient(client),{code:'CONFLICT'});assert.equal(other.pending,null);await other.reload();assert.equal(other.data().clients.length,1);
 });
-test('Пагінація понад 100 записів та атомарне відхилення різних ревізій',async()=>{
- let inconsistent=false;const rows=Array.from({length:201},(_,i)=>({id:String(i),client_no:String(i+1)}));
- const s=new Service(async(m,r)=>({revision:inconsistent&&r.args.page===1?2:1,result:{items:r.args.table==='clients'?rows.slice(r.args.page*100,(r.args.page+1)*100):[],total:r.args.table==='clients'?201:0}}));
+test('Понад 100 записів одним bootstrap та атомарна відмова неузгодженої відповіді',async()=>{
+ let inconsistent=false;const rows=Array.from({length:201},(_,i)=>({...client,id:String(i),client_no:String(i+1),version:1}));
+ const state={version:2,modelVersion:12,revision:1,sequence:201,clients:rows,applications:[],contacts:[],interactions:[],documents:[],partners:[],client_partners:[]};
+ const s=new Service(async()=>({revision:inconsistent?2:1,result:state}));
  await s.reload();assert.equal(s.data().clients.length,201);const before=s.data();inconsistent=true;await assert.rejects(s.reload(),/змінилися/);assert.equal(s.data(),before);
 });
 test('Браузерний google.script.run: успіх, серверна відмова та транспортна помилка',async()=>{
  const vm=require('node:vm'),fs=require('node:fs');let mode='success';
  const context={CrmCore:require('../source/server/core'),crypto:{randomUUID},setTimeout,clearTimeout,google:{script:{get run(){
-  let success,failure;return {withSuccessHandler(f){success=f;return this;},withFailureHandler(f){failure=f;return this;},crmQuery(){queueMicrotask(()=>mode==='transport'?failure(Error('private detail')):success(mode==='denied'?{ok:false,code:'UNAVAILABLE',message:'Доступ закрито.'}:{ok:true,value:{revision:0,result:{items:[],total:0}}}));}};
+  let success,failure;return {withSuccessHandler(f){success=f;return this;},withFailureHandler(f){failure=f;return this;},crmQuery(){queueMicrotask(()=>mode==='transport'?failure(Error('private detail')):success(mode==='denied'?{ok:false,code:'UNAVAILABLE',message:'Доступ закрито.'}:{ok:true,value:{revision:0,result:{version:2,modelVersion:12,revision:0,sequence:0,clients:[],applications:[],contacts:[],interactions:[],documents:[],partners:[],client_partners:[]}}}));}};
  }}}};
  vm.createContext(context);vm.runInContext(fs.readFileSync(require.resolve('../source/web/remote'),'utf8'),context);
  const s=new context.CrmRemote.Service();await s.reload();assert.equal(s.data().clients.length,0);

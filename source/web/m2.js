@@ -32,7 +32,9 @@ function showClients() {
  const toggle=main.querySelector('#client-filter-toggle'),panel=main.querySelector('#client-filters');
  toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)main.querySelector('#type').focus();};
  panel.onkeydown=e=>{if(e.key==='Escape'){panel.hidden=true;toggle.setAttribute('aria-expanded','false');toggle.focus();}};
+ let searchTimer;
  const update=()=>{
+  clearTimeout(searchTimer);
   const result=crm.listClients(clientState);clientState.page=result.page;
   main.querySelector('#count').textContent='Знайдено: '+result.total;
   const active=Number(Boolean(clientState.type))+Number(Boolean(clientState.status));main.querySelector('#active-filters').textContent=active?' ('+active+')':'';
@@ -41,7 +43,7 @@ function showClients() {
   main.querySelectorAll('[data-note-cell]').forEach(cell=>renderCatalogNote(cell,result.items.find(c=>c.id===cell.dataset.noteCell)));
   main.querySelector('#page').textContent='Сторінка '+(result.page+1)+' із '+Math.max(1,Math.ceil(result.total/result.limit));main.querySelector('#prev').disabled=result.page===0;main.querySelector('#next').disabled=(result.page+1)*result.limit>=result.total;
  };
- for(const key of ['query','type','status']){const e=main.querySelector('#'+key);e.value=clientState[key];e.oninput=()=>{clientState[key]=e.value;clientState.page=0;update();};}
+ for(const key of ['query','type','status']){const e=main.querySelector('#'+key);e.value=clientState[key];e.oninput=()=>{clientState[key]=e.value;clientState.page=0;if(key==='query'){clearTimeout(searchTimer);searchTimer=setTimeout(()=>{if(e.isConnected)update();},150);}else update();};}
  main.querySelectorAll('[data-sort]').forEach(b=>b.onclick=()=>{clientState.direction=clientState.sort===b.dataset.sort&&clientState.direction==='asc'?'desc':'asc';clientState.sort=b.dataset.sort;update();});
  main.querySelector('#client-reset').onclick=()=>{for(const key of ['query','type','status']){clientState[key]='';main.querySelector('#'+key).value='';}clientState.page=0;update();};
  main.querySelector('#prev').onclick=()=>{clientState.page--;update();};main.querySelector('#next').onclick=()=>{clientState.page++;update();};update();

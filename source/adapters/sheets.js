@@ -91,9 +91,11 @@ class SheetsRepository {
     if(this.hash(raw)!==pointer.hash)throw Error('Контрольна сума журналу не збігається.');
     const state=JSON.parse(raw);validate(state);return state;
   }
-  project(state) {
-    const tables=normalize(state);
+  project(state,previousState=null) {
+    // Попередній стан перевірено під тим самим lock; відновлення завжди проєктує всі аркуші.
+    const tables=normalize(state), previousTables=previousState?normalize(previousState):null;
     for(const name of tablesFor(state)) {
+      if(previousTables && JSON.stringify(tables[name])===JSON.stringify(previousTables[name]))continue;
       const sheet=this.sheet(name), rows=tables[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
       if(rows.some(r=>r[3].length>45000))throw Error('Запис перевищує безпечний розмір комірки.');
       const previous=sheet.getLastRow()-1;
@@ -112,18 +114,20 @@ class SheetsRepository {
     }
     if(!control.committed)throw Error('Базу не налаштовано.');
     const state=this.journal(control.committed);
+    // Між викликами немає кешу: зміни поза CRM перевіряються щоразу.
     // Ручне редагування Sheets не є API CRM: відмовляємо, не стираючи змін власника.
     const expected=normalize(state);
     for(const name of tablesFor(state)) {
       const sheet=this.sheet(name), count=sheet.getLastRow()-1;
-      if(JSON.stringify(sheet.getRange(1,1,1,HEADER.length).getValues()[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
-      const rows=count?sheet.getRange(2,1,count,HEADER.length).getValues():[];
+      const values=sheet.getRange(1,1,Math.max(1,count+1),HEADER.length).getValues();
+      if(JSON.stringify(values[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
+      const rows=values.slice(1);
       const wanted=expected[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
       if(JSON.stringify(rows)!==JSON.stringify(wanted))throw Error('Аркуші змінено поза CRM. Збережіть приватну копію та виконайте перевірене відновлення.');
     }
     return state;
   }
-  commit(next,control) {
+  commit(next,control,previousState=null) {
     validate(next);
     // Обмеження перевіряються ДО публікації pending, щоб відновлення завжди могло завершитися.
     for(const rows of Object.values(normalize(next))) if(rows.some(r=>JSON.stringify(r).length>45000))throw Error('Запис перевищує безпечний розмір комірки.');
@@ -138,17 +142,17 @@ class SheetsRepository {
     // Журнал не очищається: попередня підтверджена версія залишається доступною.
     this.journal(pending);
     this.writeControl({schema:next.modelVersion===12?2:1,committed:control.committed,pending});
-    this.project(next);
+    this.project(next,previousState);
     this.writeControl({schema:next.modelVersion===12?2:1,committed:pending,pending:null});
   }
   read() { return this.locked(()=>copy(this.recover())); }
-  transaction(change) {
+  transaction(change,sync=false) {
     return this.locked(()=>{
       const current=this.recover(), request=this.request;
       if(request) {
         if(!UUID.test(request.id)||typeof request.fingerprint!=='string')throw Error('Потрібен UUID запиту.');
         const receipt=current.receipts.find(r=>r.id===request.id);
-        if(receipt) {if(receipt.fingerprint!==request.fingerprint)throw Error('Ідентифікатор запиту вже використано для іншої дії.');return copy(receipt.result);}
+        if(receipt) {if(receipt.fingerprint!==request.fingerprint)throw Error('Ідентифікатор запиту вже використано для іншої дії.');return sync?{protocol:1,result:copy(receipt.result),sync:{state:Core.wireState(current)}}:copy(receipt.result);}
       }
       if(this.expectedRevision!==null && current.revision!==this.expectedRevision)throw Error('Конфлікт ревізії. Оновіть дані перед новою зміною.');
       const next=copy(current), result=copy(change(next)??null);
@@ -156,7 +160,8 @@ class SheetsRepository {
       // М2 не версіонував незмінні додані контакти та взаємодії.
       for(const table of ['contacts','interactions'])for(const row of next[table])if(!row.version)row.version=1;
       if(request)next.receipts.push({id:request.id,fingerprint:request.fingerprint,result});
-      this.commit(next,this.control());return result;
+      const response=sync?{protocol:1,result,sync:Core.changesSince(current,next)}:result;
+      this.commit(next,this.control(),current);return response;
     });
   }
   snapshot() { return JSON.stringify(this.read()); }
