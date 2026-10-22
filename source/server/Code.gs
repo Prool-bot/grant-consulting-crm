@@ -8,7 +8,7 @@ function crmDiagnostics_(properties) {
   if(properties.getProperty('CRM_ENVIRONMENT')!=='test'||properties.getProperty('CRM_DIAGNOSTICS_ENABLED')!=='true')return null;
   var mode=properties.getProperty('CRM_PROJECTION_READ_MODE');
   if(mode && mode!=='data_range' && mode!=='bounded_range')throw Error('Невідомий тестовий режим читання.');
-  return {enabled:true,projectionReadMode:mode||'data_range',emit:function(report){console.log(JSON.stringify(report));}};
+  return {enabled:true,projectionReadMode:mode||'bounded_range',emit:function(report){console.log(JSON.stringify(report));}};
 }
 // Окремий ручний тест без recovery: pending відхиляється без записів.
 function benchmarkCrmRead_() {

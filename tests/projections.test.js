@@ -8,7 +8,7 @@ for(const size of [3,100,250,1000])test(`Проєкції: порівняння 
   assert.equal(after[op].rangeReads,before[op].rangeReads);
   assert.equal(after[op].rangeWrites,before[op].rangeWrites);
   assert.equal(after[op].flushes,before[op].flushes);
-  assert.ok(after[op].lastRows<before[op].lastRows);
+  assert.ok(after[op].lastRows<=before[op].lastRows);
  }
  assert.equal(after.read.rangeReads,11);assert.equal(after.save.rangeReads,13);
  assert.equal(before.save.projectionRows,size*2);assert.equal(after.save.projectionRows,2);

@@ -45,7 +45,7 @@ class SheetsRepository {
   constructor({spreadsheet,lock,flush,hash,expectedRevision=null,request=null,diagnostics=null}) {
     Object.assign(this,{spreadsheet,lock,hash,expectedRevision,request});
     this.diagnostics=diagnostics?.enabled===true?diagnostics:null;
-    this.projectionReadMode=this.diagnostics?.projectionReadMode==='bounded_range'?'bounded_range':'data_range';
+    this.projectionReadMode=this.diagnostics?.projectionReadMode==='data_range'?'data_range':'bounded_range';
     this.flush=()=>this.measure('flush',flush);
   }
   measure(stage,action) {

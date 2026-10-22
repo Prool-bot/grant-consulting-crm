@@ -22,7 +22,7 @@ test('Тестовий перемикач і ручне порівняння з�
  const context={console:{log:()=>{}}};vm.createContext(context);vm.runInContext(fs.readFileSync('source/server/Code.gs','utf8'),context);
  for(const env of ['test','production',undefined])for(const enabled of ['true','false'])for(const mode of ['data_range','bounded_range','invalid',undefined]){
   const props={getProperty:k=>({CRM_ENVIRONMENT:env,CRM_DIAGNOSTICS_ENABLED:enabled,CRM_PROJECTION_READ_MODE:mode})[k]};
-  if(env==='test'&&enabled==='true'){if(mode==='invalid')assert.throws(()=>context.crmDiagnostics_(props));else assert.equal(context.crmDiagnostics_(props).projectionReadMode,mode||'data_range');}
+  if(env==='test'&&enabled==='true'){if(mode==='invalid')assert.throws(()=>context.crmDiagnostics_(props));else assert.equal(context.crmDiagnostics_(props).projectionReadMode,mode||'bounded_range');}
   else assert.equal(context.crmDiagnostics_(props),null);
  }
  const f=fixture();context.crmRepository_=()=>f.repo();assert.throws(()=>context.benchmarkCrmRead_(),/тестового/);
@@ -30,4 +30,11 @@ test('Тестовий перемикач і ручне порівняння з�
   context.crmRepository_=()=>f.repo({diagnostics:{enabled:true,projectionReadMode:mode,emit:()=>{}}});f.book.arm(0);context.benchmarkCrmRead_();assert.equal(f.book.calls,0);
  }
  const control=f.repo().control();control.pending=control.committed;f.book.getSheetByName('_crm_control').getRange(2,1).setValue(JSON.stringify(control));f.book.arm(0);assert.throws(()=>context.benchmarkCrmRead_(),/відновлення/);assert.equal(f.book.calls,0);
+});
+
+test('Робочий режим: bounded_range без таймерів, звітів або тестового перемикання',()=>{
+ const f=fixture();let calls=0;
+ for(const diagnostics of [null,{enabled:false,projectionReadMode:'data_range',clock:()=>++calls,emit:()=>calls++}]){
+  const r=f.repo({diagnostics});f.book.resetMetrics();r.read();assert.equal(r.projectionReadMode,'bounded_range');assert.equal(f.book.metrics.lastRows,9);assert.equal(calls,0);assert.equal(r.timings,undefined);
+ }
 });
