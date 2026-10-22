@@ -13,7 +13,7 @@ function fixture(enabled=true,emit){
 const client={legal_name:'Демо: PRIVATE_MARKER',type:'ngo',status:'active',catalog_note:'PRIVATE_MARKER'};
 test('Діагностика: етапи читання/запису, власний час та обмежена схема без даних',()=>{
  const f=fixture(),r=f.repo();new CrmService(r).saveClient(client);assert.equal(f.reports.length,1);
- const report=f.reports[0];assert.deepEqual(Object.keys(report),['kind','version','stages']);
+ const report=f.reports[0];assert.deepEqual(Object.keys(report),['kind','version','projectionReadMode','stages']);
  for(const key of ['lock_wait','control_read','journal_read','checksum','sheets_verify','journal_write','sheets_update','flush','state_validate','repository_total']){
   const value=report.stages[key];assert.ok(value);assert.deepEqual(Object.keys(value),['calls','durationMs','selfMs','failures']);assert.ok(value.durationMs>=value.selfMs);assert.equal(value.failures,0);
  }
@@ -41,5 +41,5 @@ test('Діагностика після збоїв на кожній межі з
 test('Script Properties: потрібні одночасно точні test і true; RPC не вмикає діагностику',()=>{
  const logs=[],context={console:{log:s=>logs.push(s)}};vm.createContext(context);vm.runInContext(fs.readFileSync('source/server/Code.gs','utf8'),context);
  for(const [environment,enabled] of [[undefined,undefined],['production','true'],['test','false'],['test',undefined],['TEST','true'],['test','TRUE']])assert.equal(context.crmDiagnostics_({getProperty:k=>k==='CRM_ENVIRONMENT'?environment:enabled}),null);
- const d=context.crmDiagnostics_({getProperty:k=>k==='CRM_ENVIRONMENT'?'test':'true'});assert.equal(d.enabled,true);d.emit({kind:'crm_repository_timing',version:1,stages:{}});assert.equal(logs.length,1);
+ const d=context.crmDiagnostics_({getProperty:k=>({CRM_ENVIRONMENT:'test',CRM_DIAGNOSTICS_ENABLED:'true'})[k]});assert.equal(d.enabled,true);d.emit({kind:'crm_repository_timing',version:1,stages:{}});assert.equal(logs.length,1);
 });

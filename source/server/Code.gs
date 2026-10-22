@@ -6,7 +6,20 @@ function crmHash_(text) {
 function crmDiagnostics_(properties) {
   // Вмикається власником лише у відокремленому тестовому Script-проєкті.
   if(properties.getProperty('CRM_ENVIRONMENT')!=='test'||properties.getProperty('CRM_DIAGNOSTICS_ENABLED')!=='true')return null;
-  return {enabled:true,emit:function(report){console.log(JSON.stringify(report));}};
+  var mode=properties.getProperty('CRM_PROJECTION_READ_MODE');
+  if(mode && mode!=='data_range' && mode!=='bounded_range')throw Error('Невідомий тестовий режим читання.');
+  return {enabled:true,projectionReadMode:mode||'data_range',emit:function(report){console.log(JSON.stringify(report));}};
+}
+// Окремий ручний тест без recovery: pending відхиляється без записів.
+function benchmarkCrmRead_() {
+  var repository=crmRepository_();
+  if(!repository.diagnostics)throw Error('Потрібна діагностика окремого тестового середовища.');
+  repository.locked(function(){
+    var control=repository.control();
+    if(control.pending)throw Error('Спершу завершіть відновлення тестової бази.');
+    var state=repository.journal(control.committed);
+    repository.verifyProjection(state);
+  });
 }
 function crmRepository_(request) {
   var properties=PropertiesService.getScriptProperties();

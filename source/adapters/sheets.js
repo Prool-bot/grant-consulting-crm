@@ -45,6 +45,7 @@ class SheetsRepository {
   constructor({spreadsheet,lock,flush,hash,expectedRevision=null,request=null,diagnostics=null}) {
     Object.assign(this,{spreadsheet,lock,hash,expectedRevision,request});
     this.diagnostics=diagnostics?.enabled===true?diagnostics:null;
+    this.projectionReadMode=this.diagnostics?.projectionReadMode==='bounded_range'?'bounded_range':'data_range';
     this.flush=()=>this.measure('flush',flush);
   }
   measure(stage,action) {
@@ -71,7 +72,7 @@ class SheetsRepository {
         const stages={};
         for(const key of ['repository_total','lock_wait','control_read','journal_read','checksum','state_validate','sheets_verify','journal_write','sheets_update','flush'])if(this.timings[key])stages[key]={...this.timings[key]};
         this.timings=null;
-        try{this.diagnostics.emit({kind:'crm_repository_timing',version:1,stages});}catch{}
+        try{this.diagnostics.emit({kind:'crm_repository_timing',version:1,projectionReadMode:this.projectionReadMode,stages});}catch{}
       }
     }
   }
@@ -166,7 +167,11 @@ class SheetsRepository {
       const sheet=this.sheet(name);
       // Один прямокутний пакет містить заголовок і всі заповнені рядки,
       // включно зі сторонніми рядками за очікуваною межею.
-      const values=sheet.getDataRange().getValues().map(row=>row.slice(0,HEADER.length));
+      // getLastRow враховує також колонки поза проєкцією: зайві рядки
+      // залишаються в порівнянні навіть із порожніми A:D.
+      const values=this.projectionReadMode==='bounded_range'
+        ?sheet.getRange(1,1,Math.max(1,sheet.getLastRow()),HEADER.length).getValues()
+        :sheet.getDataRange().getValues().map(row=>row.slice(0,HEADER.length));
       if(JSON.stringify(values[0])!==JSON.stringify(HEADER))throw Error('Несумісна структура аркушів.');
       const rows=values.slice(1);
       const wanted=expected[name].map(r=>[r.id,r.client_id||'',r.version,JSON.stringify(r)]);
