@@ -3,6 +3,24 @@ function crmHash_(text) {
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,text,Utilities.Charset.UTF_8)
     .map(function(byte) { return ('0'+((byte+256)%256).toString(16)).slice(-2); }).join('');
 }
+function crmDiagnostics_(properties) {
+  // Вмикається власником лише у відокремленому тестовому Script-проєкті.
+  if(properties.getProperty('CRM_ENVIRONMENT')!=='test'||properties.getProperty('CRM_DIAGNOSTICS_ENABLED')!=='true')return null;
+  var mode=properties.getProperty('CRM_PROJECTION_READ_MODE');
+  if(mode && mode!=='data_range' && mode!=='bounded_range')throw Error('Невідомий тестовий режим читання.');
+  return {enabled:true,projectionReadMode:mode||'bounded_range',emit:function(report){console.log(JSON.stringify(report));}};
+}
+// Окремий ручний тест без recovery: pending відхиляється без записів.
+function benchmarkCrmRead_() {
+  var repository=crmRepository_();
+  if(!repository.diagnostics)throw Error('Потрібна діагностика окремого тестового середовища.');
+  repository.locked(function(){
+    var control=repository.control();
+    if(control.pending)throw Error('Спершу завершіть відновлення тестової бази.');
+    var state=repository.journal(control.committed);
+    repository.verifyProjection(state);
+  });
+}
 function crmRepository_(request) {
   var properties=PropertiesService.getScriptProperties();
   CrmGateway.authorize(properties,Session);
@@ -11,6 +29,7 @@ function crmRepository_(request) {
   return new CrmSheets.SheetsRepository({
     spreadsheet:SpreadsheetApp.openById(id),lock:LockService.getScriptLock(),
     flush:function() { SpreadsheetApp.flush(); },hash:crmHash_,
+    diagnostics:crmDiagnostics_(properties),
     expectedRevision:request?request.revision:null,
     request:request?{id:request.requestId,fingerprint:crmHash_(JSON.stringify(request))}:null
   });

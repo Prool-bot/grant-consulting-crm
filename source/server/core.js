@@ -33,6 +33,21 @@ function validate12(s) {
   const pairs=s.client_partners.filter(r=>!r.deleted_at).map(r=>r.client_id+':'+r.partner_id);
   if(new Set(pairs).size!==pairs.length)throw Error('Цей партнер уже приєднаний до клієнта.');
 }
+const DATA_TABLES=['clients','applications','contacts','interactions',...COLLECTIONS];
+// У браузер не передаємо квитанції, покажчики журналу чи метадані міграції.
+function wireState(s) {
+  if(s.modelVersion!==12)throw Error('CRM12_MIGRATION_REQUIRED');
+  return clone({version:s.version,modelVersion:s.modelVersion,revision:s.revision,sequence:s.sequence,...Object.fromEntries(DATA_TABLES.map(t=>[t,s[t]]))});
+}
+function changesSince(before,after) {
+  const changes={};
+  for(const table of DATA_TABLES) {
+    const old=new Map(before[table].map(r=>[r.id,JSON.stringify(r)]));
+    const rows=after[table].filter(r=>old.get(r.id)!==JSON.stringify(r));
+    if(rows.length)changes[table]=rows;
+  }
+  return {baseRevision:before.revision,revision:after.revision,sequence:after.sequence,changes};
+}
 const empty = () => ({version:2, modelVersion:12, documents:[], partners:[], client_partners:[], revision:0, sequence:0, clients:[], applications:[], contacts:[], interactions:[]});
 class LocalRepository {
   constructor(storage = null) { this.storage = storage; this.key = 'crm-m2-synthetic-v2'; const raw = storage?.getItem(this.key); this.state = raw ? JSON.parse(raw) : empty(); if(this.state.modelVersion===undefined){validate12(this.state);Object.assign(this.state,{modelVersion:12,documents:[],partners:[],client_partners:[]});} this.validate(this.state); }
@@ -68,19 +83,33 @@ function validateApplication(a) {
 class CrmService {
   constructor(repository, uuid = D.uuid) { this.repository=repository; this.uuid=uuid; }
   initialize(seed) { if(this.repository.read().clients.length) return; this.repository.transaction(s=>{ s.clients=clone(seed.clients).map(c=>({...c,version:1})); s.contacts=seed.clients.flatMap(c=>(c.contacts||[]).map(full_name=>({id:this.uuid(),client_id:c.id,full_name,created_at:new Date().toISOString()}))); s.sequence=Math.max(0,...s.clients.map(c=>Number(c.client_no))); s.applications=clone(seed.applications).map(a=>({...a,currency:'EUR',version:1})); }); }
-  data() { const s=this.repository.read(); return {...s,...Object.fromEntries(COLLECTIONS.map(t=>[t,(s[t]||[]).filter(r=>!r.deleted_at&&(t==='partners'||s.clients.some(c=>c.id===r.client_id&&!c.deleted_at)))])),clients:s.clients.filter(c=>!c.deleted_at),applications:s.applications.filter(a=>!a.deleted_at && s.clients.some(c=>c.id===a.client_id&&!c.deleted_at))}; }
+  data() {
+    const s=this.repository.read(),clients=s.clients.filter(c=>!c.deleted_at),ids=new Set(clients.map(c=>c.id));
+    return {...s,...Object.fromEntries(COLLECTIONS.map(t=>[t,(s[t]||[]).filter(r=>!r.deleted_at&&(t==='partners'||ids.has(r.client_id)))])),clients,applications:s.applications.filter(a=>!a.deleted_at&&ids.has(a.client_id))};
+  }
   listClients({query='',type='',status='',sort='client_no',direction='asc',page=0,limit=20}={}) {
     const s=this.data();
+    const contacts=new Map();
+    for(const r of s.contacts){if(!contacts.has(r.client_id))contacts.set(r.client_id,[]);contacts.get(r.client_id).push(r.full_name,r.email,r.phone);}
     const summaries=D.applicationSummaries(s.applications);
     const searchable=s.clients.map(c=>({...c,
-      application_count:0,...summaries.get(c.id),
-      contacts:s.contacts.filter(r=>r.client_id===c.id).flatMap(r=>[r.full_name,r.email,r.phone])
+      social_links:c.social_links||[],organization_age:D.organizationAge(c),submitted_count:0,won_count:0,application_count:0,...summaries.get(c.id),
+      contacts:contacts.get(c.id)||[]
     }));
     const rows=D.searchClients(searchable,{query,type,status});
     const extra=['requested','awarded','next_deadline','last_application'];
-    const key=['client_no','legal_name','edrpou_optional','type','location','sectors','status','application_count',...extra].includes(sort)?sort:'client_no';
+    const key=['client_no','legal_name','edrpou_optional','type','location','sectors','status','application_count','nonprofit_code','organization_age','submitted_count','won_count','catalog_note',...extra].includes(sort)?sort:'client_no';
     const value=c=>key==='type'?D.types[c.type]:key==='status'?D.statuses[c.status]:key==='sectors'?(c.sectors||[]).join(', '):c[key];
-    rows.sort((a,b)=>extra.includes(key)?D.compareSummary(a,b,key,direction)||a.client_no.localeCompare(b.client_no,'uk',{numeric:true}):(String(value(a)??'').localeCompare(String(value(b)??''),'uk',{numeric:true}) || a.client_no.localeCompare(b.client_no,'uk',{numeric:true}))*(direction==='desc'?-1:1));
+    rows.sort((a,b)=>{
+      const tie=a.client_no.localeCompare(b.client_no,'uk',{numeric:true});
+      const sign=direction==='desc'?-1:1;
+      if(['organization_age','submitted_count','won_count'].includes(key)) {
+        if(a[key]==null || b[key]==null)return (a[key]==null)===(b[key]==null)?tie:a[key]==null?1:-1;
+        return (a[key]-b[key])*sign || tie;
+      }
+      if(extra.includes(key))return D.compareSummary(a,b,key,direction)||tie;
+      return (String(value(a)??'').localeCompare(String(value(b)??''),'uk',{numeric:true})||tie)*sign;
+    });
     const size=Math.max(1,Math.min(100,Number.isInteger(limit)?limit:20));
     const index=Math.min(Math.max(0,Number.isInteger(page)?page:0),Math.max(0,Math.ceil(rows.length/size)-1));
     return {items:rows.slice(index*size,index*size+size),total:rows.length,page:index,limit:size};
@@ -90,8 +119,9 @@ class CrmService {
     return this.repository.transaction(s=>{
       const old=id ? s.clients.find(c=>c.id===id&&!c.deleted_at) : null;
       if(id && (!old || old.version!==version)) throw Error('Клієнта змінено або видалено. Оновіть сторінку.');
-      const allowed=['legal_name','short_name','type','status','location','edrpou_optional','website','source','priority','description','next_action_at','sectors','geography','funding_needs','grants_experience','target_groups','prior_donors','capacity_note','competencies','portfolio','eligibility_notes'];
+      const allowed=['social_links','nonprofit_code','registration_date','catalog_note','legal_name','short_name','type','status','location','edrpou_optional','website','source','priority','description','next_action_at','sectors','geography','funding_needs','grants_experience','target_groups','prior_donors','capacity_note','competencies','portfolio','eligibility_notes'];
       const fields=Object.fromEntries(allowed.filter(k=>Object.hasOwn(input,k)).map(k=>[k,input[k]]));
+      if(fields.social_links)fields.social_links=fields.social_links.map(link=>({platform:link.platform,url:D.normalizeUrl(link.url),label:link.label||''}));
       const now=new Date().toISOString();
       const row={...old,...fields,id:old?.id||this.uuid(),client_no:old?.client_no||String(++s.sequence).padStart(4,'0'),version:(old?.version||0)+1,created_at:old?.created_at||now,updated_at:now};
       if(row.status==='archived' && old?.status!=='archived') row.previous_status=old?.status||'potential';
@@ -170,5 +200,5 @@ class CrmService {
     return this.repository.transaction(s=>{if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Клієнта не знайдено.'); const keys=table==='contacts'?['client_id','full_name','role','email','phone','preferred_channel']:['client_id','type','happened_at','summary','next_step']; const row={...Object.fromEntries(keys.map(k=>[k,input[k]||''])),id:this.uuid(),created_at:new Date().toISOString()};s[table].push(row);return row;});
   }
 }
-const api={COLLECTIONS,documentCategories,partnerTypes,partnerStatuses,validate12,LocalRepository,CrmService,statuses,validateApplication};if(typeof module!=='undefined')module.exports=api;else root.CrmCore=api;
+const api={DATA_TABLES,wireState,changesSince,COLLECTIONS,documentCategories,partnerTypes,partnerStatuses,validate12,LocalRepository,CrmService,statuses,validateApplication};if(typeof module!=='undefined')module.exports=api;else root.CrmCore=api;
 })(globalThis);

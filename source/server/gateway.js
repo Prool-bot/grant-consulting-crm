@@ -16,7 +16,9 @@ function page(rows,options={}) {
   return {items:rows.slice(index*limit,(index+1)*limit),total:rows.length,page:index,limit};
 }
 function query(repository,request) {
-  const state=repository.read(), local=new Core.LocalRepository();local.state=state;
+  const state=repository.read();
+  if(request.action==='bootstrap')return {revision:state.revision,result:Core.wireState(state)};
+  const local=new Core.LocalRepository();local.state=state;
   const service=new Core.CrmService(local), data=service.data(), args=request.args||{};
   let result;
   switch(request.action) {
@@ -37,7 +39,8 @@ function query(repository,request) {
 }
 function mutate(repository,uuid,request) {
   if(!UUID.test(request.requestId)||!Number.isSafeInteger(request.revision)||request.revision<0)throw Error('Потрібні UUID запиту та ревізія.');
-  const service=new Core.CrmService(repository,uuid), a=request.args||{};
+  const target=request.sync===true?{transaction:change=>repository.transaction(state=>{if(state.modelVersion!==12)throw Error('CRM12_MIGRATION_REQUIRED');return change(state);},true)}:repository;
+  const service=new Core.CrmService(target,uuid), a=request.args||{};
   // Для видалення/архівування М2 не мав аргументу версії: сервер вимагає
   // ревізію всього стану, яка перевіряється під тим самим ScriptLock.
   switch(request.action) {
