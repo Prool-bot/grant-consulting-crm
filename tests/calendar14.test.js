@@ -165,7 +165,7 @@ test('Calendar CRM: помилка Google не втрачає дію; повто
 });
 test('Calendar CRM: неправильні дата, час, тривалість і нагадування блокуються до запису',()=>{
  const {repo,service,c}=fixture(),before=repo.read().interactions.length;
- for(const fields of [{date:'2026-02-30'},{time:'25:30'},{duration_minutes:-1},{reminder_minutes:999},{title:''}]){
+ for(const fields of [{date:'2026-02-30'},{time:'25:30'},{time_zone:'Etc/GMT'},{duration_minutes:-1},{reminder_minutes:999},{title:''}]){
   assert.throws(()=>service.addRelated('interactions',{client_id:c.id,summary:'Демо',calendar_action:{...todo,...fields}}));
  }
  assert.equal(repo.read().interactions.length,before);
