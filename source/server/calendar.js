@@ -54,6 +54,7 @@ function syncPending(repository,calendar,localTime,now=()=>new Date(),limit=5) {
      }else event=calendar.createEvent(title,start,end,{description});
      // Відсутність квитанції на попередньому кроці не повинна створювати дубль.
      if(typeof event.setTag==='function')event.setTag('crm_action_id',claimed.id);
+     if(typeof event.setVisibility==='function')event.setVisibility(root.CalendarApp?.Visibility?.PRIVATE||'PRIVATE');
      event.removeAllReminders();
      if(task.reminder_minutes>0)event.addPopupReminder(task.reminder_minutes);
      id=event.getId();
