@@ -3,6 +3,9 @@
 // Синхронізація CRM → основний календар власника. Події створюються тільки з дій у взаємодіях.
 // Кожен крок із Sheets — окрема транзакція; зовнішній API НІКОЛИ не викликається під ScriptLock.
 const MARK='CRM-ACTION:';
+// Точний збіг окремого рядка: префікс UUID іншої події не є доказом належності CRM.
+const hasMarker=(event,token)=>typeof event?.getDescription==='function' &&
+ String(event.getDescription()||'').split(/\r?\n/).some(line=>line.trim()===token);
 const clone=value=>JSON.parse(JSON.stringify(value));
 const eligible=(action,now)=>{
  if(!action)return false;
@@ -35,7 +38,7 @@ function syncPending(repository,calendar,localTime,now=()=>new Date(),limit=5) {
    let event=task.event_id?calendar.getEventById(task.event_id):null;
    // Ніколи не редагувати чи видаляти події, які не належать CRM:
    // event_id може бути помилковим або зміненим у таблиці.
-   if(event && (typeof event.getDescription!=='function'||!event.getDescription().includes(token))) {
+   if(event && !hasMarker(event,token)) {
      throw Error('CALENDAR_EVENT_ID_MISMATCH');
    }
    const start=localTime(task.date,task.time);
@@ -44,7 +47,7 @@ function syncPending(repository,calendar,localTime,now=()=>new Date(),limit=5) {
    if(!event){
     // Після збою між createEvent та збереженням event_id відновлюємо подію за стабільною міткою.
     const found=calendar.getEvents(new Date(start.getTime()-86400000),new Date(end.getTime()+86400000),{search:token})||[];
-    event=found.find(e=>typeof e.getDescription==='function'&&e.getDescription().includes(token))||null;
+    event=found.find(e=>hasMarker(e,token))||null;
    }
    let id=task.event_id||'';
    if(task.state==='cancelled'){

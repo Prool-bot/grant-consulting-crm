@@ -98,6 +98,33 @@ test('Calendar CRM: помилковий event_id не змінює і не ви
   assert.equal(repo.read().interactions[0].calendar_action.sync_status,'error');
  }
 });
+test('Calendar CRM: збіг лише префікса маркера не дає редагувати особисту подію',()=>{
+ const {repo,calendar}=fixture();
+ const own=repo.read().interactions[0];
+ const token='CRM-ACTION:'+own.id;
+ const personal=calendar.createEvent('Особистий захід',localTime(todo.date,todo.time),localTime(todo.date,'11:00'),{description:token+'-інша-подія'});
+ const before={title:personal.title,description:personal.description,start:personal.start.getTime()};
+ repo.transaction(state=>{state.interactions[0].calendar_action.event_id=personal.id;});
+ const result=syncPending(repo,calendar,localTime);
+ assert.equal(result.failed,1);
+ assert.equal(result.synced,0);
+ assert.equal(personal.title,before.title);
+ assert.equal(personal.description,before.description);
+ assert.equal(personal.start.getTime(),before.start);
+ assert.equal(personal.deleted,false);
+});
+test('Calendar CRM: пошук за префіксом не підхоплює сторонній захід без точного маркера',()=>{
+ const {repo,calendar}=fixture();
+ const token='CRM-ACTION:'+repo.read().interactions[0].id;
+ const foreign=calendar.createEvent('Стороння подія',localTime(todo.date,todo.time),localTime(todo.date,'11:00'),{description:'Нотатка: '+token+'-інша-подія'});
+ const result=syncPending(repo,calendar,localTime);
+ assert.equal(result.synced,1);
+ assert.equal(result.failed,0);
+ assert.equal(foreign.title,'Стороння подія');
+ assert.equal(foreign.deleted,false);
+ assert.equal(calendar.created,2);
+ assert.equal(calendar.events.size,2);
+});
 test('Calendar CRM: скасування до створення не впливає на особисті події',()=>{
  const {repo,calendar,service,interaction}=fixture();
  const personal=calendar.createEvent('Особисте',localTime(todo.date,todo.time),localTime(todo.date,'11:00'),{description:'Приватне'});

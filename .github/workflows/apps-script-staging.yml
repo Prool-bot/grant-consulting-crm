@@ -49,12 +49,14 @@ jobs:
           set -euo pipefail
           umask 077
           node <<'NODE'
-          const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+          const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
           const credentials=process.env.CLASPRC_JSON||'';
           const staging=(process.env.CRM_STAGING_SCRIPT_ID||'').trim();
           const production=(process.env.CRM_PRODUCTION_SCRIPT_ID||'').trim();
           if (!staging || !production) throw Error('Не встановлено Script ID у crm-staging.');
-          if (staging !== '1W8K0pLrQuD6kj6Ocx3Osfhv79BxVPmI6IO7Nm2LULrswqZq0o5XaKl8x') {
+          // У публічному workflow зберігаємо лише контрольний хеш, не Script ID.
+          const expectedStagingHash='57ce0d272f5a4fd0ad8ebf73376f96601ddddb3623f43dd80fe6f2f171be0f7f';
+          if (crypto.createHash('sha256').update(staging).digest('hex')!==expectedStagingHash) {
             throw Error('CRM_STAGING_SCRIPT_ID не відповідає погодженому тестовому проєкту.');
           }
           if (!credentials) throw Error('Відсутній CLASPRC_JSON у crm-staging.');
