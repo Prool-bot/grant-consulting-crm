@@ -237,6 +237,83 @@ function verifyCrmTestDatabaseIntegrity() {
     console.log('CRM_TEST_INTEGRITY_FAILED; code=UNAVAILABLE');
   }
 }
+// Ручне приймання CRUD тільки на НОВІЙ окремій синтетичній таблиці Google Sheets.
+// Не змінює існуючу CRM_1_4_TEST_DB або продуктивні дані, не викликає CalendarApp.
+// Створена синтетична таблиця лишається у приватному Drive власника для аудиту.
+function verifyCrmIsolatedSyntheticCrud() {
+  try {
+    var props=PropertiesService.getScriptProperties();
+    var expectedScriptHash='57ce0d272f5a4fd0ad8ebf73376f96601ddddb3623f43dd80fe6f2f171be0f7f';
+    if(crmHash_(ScriptApp.getScriptId())!==expectedScriptHash) {
+      console.log('CRM_SYNTHETIC_CRUD_FAILED; code=TEST_SCRIPT_MISMATCH');
+      return;
+    }
+    CrmGateway.authorize(props,Session);
+    // Перед створенням додаткового файлу ще раз перевіряємо прив'язку до
+    // погодженої тестової БД, але саму БД навіть не відкриваємо.
+    var expectedIdHash='4beceb3a77dc0f78da84a4624fa646c3403dcfe0bb90c06a559d1e6074c35656';
+    var configuredId=props.getProperty('CRM_SPREADSHEET_ID');
+    if(!configuredId||crmHash_(configuredId)!==expectedIdHash) {
+      console.log('CRM_SYNTHETIC_CRUD_FAILED; code=TEST_SHEET_MISMATCH');
+      return;
+    }
+    var scratch=SpreadsheetApp.create('CRM_1_4_SYNTHETIC_CRUD_'+Utilities.getUuid().slice(0,8));
+    var repository=new CrmSheets.SheetsRepository({
+      spreadsheet:scratch,lock:LockService.getScriptLock(),
+      flush:function(){SpreadsheetApp.flush();},hash:crmHash_
+    });
+    repository.setup();
+    // Тільки нова порожня синтетична таблиця: не мігруємо існуючих клієнтів.
+    repository.migrate12(0,true);
+    var service=new CrmCore.CrmService(repository,function(){return Utilities.getUuid();});
+    var client=service.saveClient({
+      legal_name:'CRM 1.4 СИНТЕТИЧНА ТЕСТОВА ОРГАНІЗАЦІЯ',
+      type:'ngo',status:'active'
+    });
+    var changed=service.saveClient({
+      legal_name:'CRM 1.4 СИНТЕТИЧНА ОРГАНІЗАЦІЯ (оновлена)',
+      type:'ngo',status:'active'
+    },client.id,client.version);
+    var application=service.saveApplication({
+      client_id:client.id,title:'СИНТЕТИЧНА ЗАЯВКА CRM 1.4',
+      grant:'СИНТЕТИЧНИЙ КОНКУРС',donor:'СИНТЕТИЧНИЙ ДОНОР',
+      status:'preparation',currency:'EUR',amount:null
+    });
+    service.addRelated('contacts',{
+      client_id:client.id,full_name:'Синтетичний тестовий контакт'
+    });
+    var interaction=service.addRelated('interactions',{
+      client_id:client.id,summary:'Синтетична взаємодія — без Google Calendar',
+      calendar_action:{title:'Тестова дія без синхронізації',date:'2026-11-12',
+        time:'10:00',time_zone:'Europe/Istanbul',
+        duration_minutes:15,reminder_minutes:5}
+    });
+    var state=repository.read();
+    if(state.modelVersion!==12||state.clients.length!==1||
+       state.clients[0].version!==changed.version||
+       state.applications.length!==1||state.contacts.length!==1||
+       state.interactions.length!==1||
+       state.interactions[0].calendar_action.sync_status!=='pending')
+      throw Error('SYNTHETIC_ASSERT_FAILED');
+    service.updateCalendarAction(interaction.id,'cancel',state.interactions[0].version||1);
+    service.applicationAction(application.id,'archive');
+    service.applicationAction(application.id,'restore');
+    service.deleteApplication(application.id,true);
+    service.clientAction(client.id,'archive');
+    service.clientAction(client.id,'restore');
+    service.clientAction(client.id,'delete',true);
+    state=repository.read();
+    if(!state.clients[0].deleted_at||!state.applications[0].deleted_at||
+       state.interactions[0].calendar_action.state!=='cancelled'||
+       state.interactions[0].calendar_action.sync_status!=='pending'||
+       state.interactions[0].calendar_action.event_id)
+      throw Error('SYNTHETIC_ASSERT_FAILED');
+    console.log('CRM_SYNTHETIC_CRUD_OK; scratchCreated=1; schema=12; clients=1; contacts=1; applications=1; interactions=1; calendarEvents=0; originalTestSheetWrites=0');
+  }catch(error) {
+    // Не виводимо назву/ID створеної таблиці чи приватні дані API.
+    console.log('CRM_SYNTHETIC_CRUD_FAILED; code=UNAVAILABLE');
+  }
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
