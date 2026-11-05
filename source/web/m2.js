@@ -74,7 +74,7 @@ function detailsView(c,fields) {
 }
 function dossierView(c) {
  const groups=[['Реєстраційні відомості',['short_name','edrpou_optional','nonprofit_code','registration_date','website','social_links']],['Діяльність і цільові групи',['geography','target_groups']],['Грантовий досвід та потреби',['funding_needs','grants_experience','prior_donors','eligibility_notes']],['Спроможність',['capacity_note','competencies','portfolio']],['Додаткова інформація',['source','priority','description','catalog_note']]];
- return groups.map(([title,keys])=>{const fields=dossierFields.filter(([k])=>keys.includes(k)&&(c.type==='individual'||!['competencies','portfolio'].includes(k))&&String(c[k]??'').trim());return '<section class="dossier-group"><h3>'+title+'</h3>'+(fields.length?detailsView(c,fields):'<p class="muted">Відомості ще не заповнено. <button data-edit-dossier>Редагувати</button></p>')+'</section>';}).join('');
+ return groups.map(([title,keys])=>{const fields=dossierFields.filter(([k])=>keys.includes(k)&&(c.type==='individual'||!['competencies','portfolio'].includes(k))&&String(c[k]??'').trim());return fields.length?'<section class="dossier-group"><h3>'+title+'</h3>'+detailsView(c,fields)+'</section>':'';}).join('');
 }
 function contactLink(value,kind) {
  const valid=kind==='email'?/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$/.test(value||''):/^\+?[\d ()-]{7,24}$/.test(value||'')&&String(value).replace(/\D/g,'').length>=7;
@@ -345,7 +345,7 @@ function showPartner(id) {
  '<div class="actions"><button id="print-partner" class="button secondary">Друк / PDF</button><button id="convert-partner" class="button secondary">Створити клієнта з партнера</button></div><p id="partner-conversion-error" class="error" role="alert"></p><section class="panel"><dl class="profile-details">'+fields.filter(([,v])=>v).map(([k,v])=>'<div><dt>'+escapeHtml(k)+'</dt><dd>'+(k==='Вебсайт'?safeLink(v,v):escapeHtml(v))+'</dd></div>').join('')+'</dl>'+
  (social?'<h2>Соціальні мережі</h2><ul>'+social+'</ul>':'')+
  (staff?'<h2>Співробітники</h2><div class="contact-cards">'+staff+'</div>':'')+
- '<h2>Пов’язані клієнти</h2><div class="contact-cards">'+linked.map(link=>{const c=state.clients.find(x=>x.id===link.client_id);return c?'<article class="contact-card"><a href="#profile/'+encodeURIComponent(c.id)+'/partners">'+escapeHtml(c.legal_name)+'</a><p>'+escapeHtml(link.role||'')+'</p></article>':'';}).join('')+'</div></section>';
+ (linked.length?'<h2>Пов’язані клієнти</h2><div class="contact-cards">'+linked.map(link=>{const c=state.clients.find(x=>x.id===link.client_id);return c?'<article class="contact-card"><a href="#profile/'+encodeURIComponent(c.id)+'/partners">'+escapeHtml(c.legal_name)+'</a><p>'+escapeHtml(link.role||'')+'</p></article>':'';}).join('')+'</div>':'')+'</section>';
 
  const convert=main.querySelector('#convert-partner');
  convert.onclick=async()=>{
