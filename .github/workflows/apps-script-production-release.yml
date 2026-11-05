@@ -91,6 +91,15 @@ jobs:
           const crypto=require('node:crypto');
           const approvedPrefixHash='98f3c3a8a1e30da116f74965d4c3ef6f2f92609acdad7cb83fe35a6204e2f38f';
           const correctPrefix=id=>crypto.createHash('sha256').update(id.slice(0,21)).digest('hex')===approvedPrefixHash;
+          // Жодних рядків clasp або ID не виводимо — лише статистика форми.
+          const allLines=raw.split(/\\r?\\n/).filter(Boolean);
+          const tokens=[...raw.matchAll(/[A-Za-z0-9_-]{30,}/g)].map(x=>x[0]);
+          process.stdout.write('Safe shape stats: lines='+allLines.length+
+            '; at6Lines='+allLines.filter(l=>l.includes('@6')).length+
+            '; anywhereVersionMarkers='+[...raw.matchAll(/@(\\d+)/g)].map(x=>x[1]).join(',')+
+            '; longTokens='+tokens.length+
+            '; pinnedPrefixTokens='+tokens.filter(correctPrefix).length+
+            '; lineWordCounts='+allLines.map(l=>l.trim().split(/\\s+/).length).join(',')+'\\n');
           const candidates=found.filter(d=>d.version==='6' &&
             /^[a-zA-Z0-9_-]{20,}$/.test(d.id) && correctPrefix(d.id));
           // Виводимо ЛИШЕ агрегати для діагностики, без приватних deployment IDs.
