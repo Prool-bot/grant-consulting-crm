@@ -39,6 +39,7 @@ function crmSafe_(action) {
   catch(error) {
     // Не повертаємо сирі помилки Google: вони можуть містити ID та приватні дані.
     if(error.message==='CALENDAR_NOT_CONFIGURED')return {ok:false,code:'CALENDAR_NOT_CONFIGURED',message:'Основний Google Calendar недоступний для цього акаунта. Перевірте дозвіл Calendar та налаштування власника.'};
+    if(error.message==='CALENDAR_INVALID_TIME')return {ok:false,code:'CALENDAR_INVALID_TIME',message:'Цей час за Києвом не існує або неоднозначний через переведення годинника. Виберіть іншу годину.'};
     if(error.message==='CRM12_MIGRATION_REQUIRED')return {ok:false,code:'MIGRATION_REQUIRED',message:'Потрібна ручна міграція CRM 1.2 після приватного резервного копіювання. Зверніться до інструкції випуску; дані не змінено.'};
     var conflict=/Конфлікт|змінено або видалено/.test(error.message||'');
     return {ok:false,code:conflict?'CONFLICT':'UNAVAILABLE',message:conflict?
@@ -50,7 +51,15 @@ function crmQuery(request) {
   return crmSafe_(function() {return CrmGateway.query(crmRepository_(),request);});
 }
 function crmMutate(request) {
-  return crmSafe_(function() {return CrmGateway.mutate(crmRepository_(request),function(){return Utilities.getUuid();},request);});
+  return crmSafe_(function() {
+    // Відхиляємо неіснуючі/неоднозначні години ДО створення незмінного запису в CRM.
+    // Інакше його дія залишиться у pending без можливості виправити час.
+    if(request?.action==='addRelated'&&request.args?.table==='interactions'&&request.args.input?.calendar_action) {
+      var action=request.args.input.calendar_action;
+      crmCalendarLocalTime_(action.date,action.time);
+    }
+    return CrmGateway.mutate(crmRepository_(request),function(){return Utilities.getUuid();},request);
+  });
 }
 // Синхронізація — лише за явним натисканням власника. Стандарт — його основний
 // Google Calendar; CRM_CALENDAR_ID дає змогу явно вибрати інший власний календар.
