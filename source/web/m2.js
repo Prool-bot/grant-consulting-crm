@@ -82,10 +82,27 @@ function contactLink(value,kind) {
 }
 function contactsView(rows) {
  if(!rows.length)return '<p>Записів ще немає.</p>';
- return '<div class="contact-cards">'+rows.map(r=>'<article class="contact-card"><h3>'+escapeHtml(r.full_name)+'</h3><dl>'+[['Посада',escapeHtml(r.role||'—')],['Телефон',contactLink(r.phone,'phone')],['E-mail',contactLink(r.email,'email')],['Чим займається',escapeHtml(r.responsibilities||'—')],['Чим займається',escapeHtml(r.responsibilities||'—')],['Бажаний канал',escapeHtml(r.preferred_channel||'—')]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+value+'</dd></div>').join('')+'</dl><button data-edit-contact="'+escapeHtml(r.id)+'">Редагувати контакт</button></article>').join('')+'</div>';
+ return '<div class="contact-cards">'+rows.map(r=>'<article class="contact-card"><h3>'+escapeHtml(r.full_name)+'</h3><dl>'+[['Посада',escapeHtml(r.role||'—')],['Телефон',contactLink(r.phone,'phone')],['E-mail',contactLink(r.email,'email')],['Чим займається',escapeHtml(r.responsibilities||'—')],['Бажаний канал',escapeHtml(r.preferred_channel||'—')]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+value+'</dd></div>').join('')+'</dl><button data-edit-contact="'+escapeHtml(r.id)+'">Редагувати контакт</button></article>').join('')+'</div>';
+}
+function calendarActionForm() {
+ const day=D.calendarDate(new Date().toISOString());
+ return '<label class="calendar-choice"><input type="checkbox" id="add-calendar-action"> Додати робочу дію в Google Calendar</label>'+
+ '<fieldset id="calendar-action-fields" hidden><legend>Нагадування за клієнтом</legend><div class="form-grid">'+
+ field('calendar_title','Назва дії *')+
+ '<label>Дата *<input type="date" name="calendar_date" value="'+escapeHtml(day)+'"></label>'+
+ '<label>Час (Europe/Kyiv) *<input type="time" name="calendar_time" value="10:00"></label>'+
+ selectField('calendar_duration','Тривалість (хв)',{'15':'15','30':'30','45':'45','60':'60','90':'90','120':'120'},'30')+
+ selectField('calendar_reminder','Нагадати за',{'0':'Без нагадування','5':'5 хв','10':'10 хв','15':'15 хв','30':'30 хв','60':'1 год','1440':'1 добу'},'30')+
+ '</div></fieldset>';
 }
 function historyView(rows) {
- return '<p class="registry-note">Час: Europe/Kyiv. Записи незмінні після створення.</p>'+(sortedHistory(rows).map(r=>'<article class="history-entry"><strong>'+escapeHtml(kyivDateTime(r.happened_at))+' · '+escapeHtml(r.type)+'</strong><p>'+escapeHtml(r.summary)+'</p><p>Наступний крок: '+escapeHtml(r.next_step||'—')+'</p></article>').join('')||'<p>Записів ще немає.</p>');
+ const statuses={pending:'Очікує синхронізації',syncing:'Синхронізується',synced:'У календарі',error:'Помилка синхронізації'};
+ return '<p class="registry-note">Час: Europe/Kyiv. Записи незмінні після створення. Календарні дії можна скасувати.</p>'+
+ (sortedHistory(rows).map(r=>{
+  const action=r.calendar_action;
+  const activity=action?'<div class="calendar-action"><p><strong>Календар:</strong> '+escapeHtml(action.title)+' · '+escapeHtml(action.date)+' '+escapeHtml(action.time)+' (Київ) · '+escapeHtml(statuses[action.sync_status]||'Очікує')+(action.state==='cancelled'?' · скасовано':'')+'</p><div class="actions">'+(action.state!=='cancelled'?'<button type="button" data-calendar-cancel="'+escapeHtml(r.id)+'">Скасувати дію</button>':'')+(action.sync_status==='error'?'<button type="button" data-calendar-retry="'+escapeHtml(r.id)+'">Повторити синхронізацію</button>':'')+'</div></div>':'';
+  return '<article class="history-entry"><strong>'+escapeHtml(kyivDateTime(r.happened_at))+' · '+escapeHtml(r.type)+'</strong><p>'+escapeHtml(r.summary)+'</p><p>Наступний крок: '+escapeHtml(r.next_step||'—')+'</p>'+activity+'</article>';
+ }).join('')||'<p>Записів ще немає.</p>');
 }
 function showProfile(id,initialTab='Огляд') {
  const c=crm.data().clients.find(c=>c.id===id);
@@ -129,14 +146,47 @@ function showProfile(id,initialTab='Огляд') {
    showClientApplications(content,id);
   }else{
    const contacts=tab==='Контакти',table=contacts?'contacts':'interactions';
-   const fields=contacts?[['full_name','Ім’я *'],['role','Роль'],['email','Електронна адреса'],['phone','Телефон'],['responsibilities','Чим займається / обов’язки'],['responsibilities','Чим займається / обов’язки'],['preferred_channel','Бажаний канал']]:[['happened_at','Дата взаємодії'],['summary','Підсумок *'],['next_step','Наступний крок']];
+   const fields=contacts?[['full_name','Ім’я *'],['role','Роль'],['email','Електронна адреса'],['phone','Телефон'],['responsibilities','Чим займається / обов’язки'],['preferred_channel','Бажаний канал']]:[['happened_at','Дата взаємодії'],['summary','Підсумок *'],['next_step','Наступний крок']];
    const related=crm.data()[table].filter(r=>r.client_id===id);
    content.innerHTML='<h2>'+tab+'</h2>'+(contacts?contactsView(related):historyView(related));
-   if(!editing){content.innerHTML+='<button id="add-related" class="button secondary">'+(contacts?'Додати контакт':'Додати взаємодію')+'</button>';content.querySelector('#add-related').onclick=()=>show(tab,true);content.querySelectorAll('[data-edit-contact]').forEach(b=>b.onclick=()=>show(tab,true,related.find(r=>r.id===b.dataset.editContact)));return;}
-   content.innerHTML='<h2>'+tab+'</h2><form><div class="form-grid">'+(contacts?'':selectField('type','Вид взаємодії',{'Дзвінок':'Дзвінок','Зустріч':'Зустріч','Лист':'Лист','Повідомлення':'Повідомлення','Рекомендація':'Рекомендація','Передача документів':'Передача документів'},'Дзвінок'))+fields.map(([k,l])=>field(k,l,contact?.[k]??(k==='happened_at'?D.calendarDate(new Date().toISOString()):''))).join('')+'</div><div class="actions"><button class="button">'+(contact?'Зберегти контакт':'Додати запис')+'</button><button id="cancel-related" type="button">Скасувати</button></div><p id="form-result" class="error" role="alert"></p></form>';
+   if(!editing){
+     content.innerHTML+='<button id="add-related" class="button secondary">'+(contacts?'Додати контакт':'Додати взаємодію')+'</button>'+(!contacts&&globalThis.CRM_REMOTE?'<button id="calendar-sync" class="button secondary">Синхронізувати календар</button><p id="calendar-result" role="status"></p>':'');
+     content.querySelector('#add-related').onclick=()=>show(tab,true);
+     content.querySelectorAll('[data-edit-contact]').forEach(b=>b.onclick=()=>show(tab,true,related.find(r=>r.id===b.dataset.editContact)));
+     if(!contacts){
+       content.querySelector('#calendar-sync')?.addEventListener('click',async e=>{
+         e.target.disabled=true;
+         try {const result=await crm.syncCalendar();refreshData();showProfile(id,tab);const status=main.querySelector('#calendar-result');if(status)status.textContent='Синхронізовано: '+result.synced+'; помилок: '+result.failed;}
+         catch(error){content.querySelector('#calendar-result').textContent=error.message;e.target.disabled=false;}
+       });
+       for(const [selector,action] of [['[data-calendar-cancel]','cancel'],['[data-calendar-retry]','retry']]){
+         content.querySelectorAll(selector).forEach(btn=>btn.onclick=async()=>{
+           const row=related.find(x=>x.id===btn.dataset[action==='cancel'?'calendarCancel':'calendarRetry']);if(!row)return;
+           if(action==='cancel'&&!window.confirm('Скасувати дію в календарі?'))return;
+           btn.disabled=true;
+           try {await localWrite(()=>crm.updateCalendarAction(row.id,action,row.version||1));refreshData();if(crm.syncCalendar)try {await crm.syncCalendar();refreshData();}catch{}showProfile(id,tab);}
+           catch(error){alert(error.message);btn.disabled=false;}
+         });
+       }
+     }
+     return;
+    }
+   content.innerHTML='<h2>'+tab+'</h2><form><div class="form-grid">'+(contacts?'':selectField('type','Вид взаємодії',{'Дзвінок':'Дзвінок','Зустріч':'Зустріч','Лист':'Лист','Повідомлення':'Повідомлення','Рекомендація':'Рекомендація','Передача документів':'Передача документів'},'Дзвінок'))+fields.map(([k,l])=>field(k,l,contact?.[k]??(k==='happened_at'?D.calendarDate(new Date().toISOString()):''))).join('')+'</div>'+(!contacts?calendarActionForm():'')+'<div class="actions"><button class="button">'+(contact?'Зберегти контакт':'Додати запис')+'</button><button id="cancel-related" type="button">Скасувати</button></div><p id="form-result" class="error" role="alert"></p></form>';
    content.querySelector('#cancel-related').onclick=()=>show(tab);
+    const toggle=content.querySelector('#add-calendar-action');if(toggle)toggle.onchange=()=>{content.querySelector('#calendar-action-fields').hidden=!toggle.checked;};
    content.querySelector('form input,form select')?.focus();
-   bindForm(async input=>{if(contact)await crm.saveContact({...input,client_id:id},contact.id,contact.version||1);else await crm.addRelated(table,{...input,client_id:id});refreshData();showProfile(id,tab);});
+   bindForm(async input=>{
+      if(!contacts){
+        const enabled=content.querySelector('#add-calendar-action')?.checked;
+        if(enabled)input.calendar_action={title:input.calendar_title,date:input.calendar_date,time:input.calendar_time,duration_minutes:Number(input.calendar_duration),reminder_minutes:Number(input.calendar_reminder)};
+        for(const key of ['calendar_title','calendar_date','calendar_time','calendar_duration','calendar_reminder'])delete input[key];
+      }
+      if(contact)await crm.saveContact({...input,client_id:id},contact.id,contact.version||1);
+      else await crm.addRelated(table,{...input,client_id:id});
+      refreshData();
+      if(input.calendar_action&&crm.syncCalendar)try{await crm.syncCalendar();refreshData();}catch{}
+      showProfile(id,tab);
+     });
   }
  };
  main.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>show(b.dataset.tab));
