@@ -56,7 +56,7 @@ class Service {
    // Та сама бізнес-валідація до мережевого виклику; зміни лише в тимчасовій копії.
    const repository=new Core.LocalRepository();repository.state=JSON.parse(JSON.stringify(this.state));
    const service=new Core.CrmService(repository,this.uuid);
-   const argumentsByAction={saveCatalog:[args.table,args.input,args.id,args.version],removeCatalog:[args.table,args.id,args.version,args.confirmed],saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input]};
+   const argumentsByAction={saveCatalog:[args.table,args.input,args.id,args.version],removeCatalog:[args.table,args.id,args.version,args.confirmed],saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input],updateCalendarAction:[args.id,args.action,args.version]};
    service[action](...argumentsByAction[action]);
    this.pending={signature,request:JSON.parse(JSON.stringify({action,args,sync:true,revision:this.state.revision,requestId:this.uuid()})),acknowledged:false};
   }
@@ -79,6 +79,8 @@ class Service {
  applicationAction(id,action){return this.mutate('applicationAction',{id,action});}
  deleteApplication(id,confirmed){return this.mutate('deleteApplication',{id,confirmed});}
  addRelated(table,input){return this.mutate('addRelated',{table,input});}
+ updateCalendarAction(id,action,version){return this.mutate('updateCalendarAction',{id,action,version});}
+ async syncCalendar(){const result=await this.call('crmCalendarSync',{});await this.reload();return result;}
 }
 const api={Service};if(typeof module!=='undefined')module.exports=api;else root.CrmRemote=api;
 })(globalThis);
