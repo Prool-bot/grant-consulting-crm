@@ -71,3 +71,25 @@ test('Контакти UI → RPC → Sheets: оновлення без дубл
  assert.equal(repo().read().contacts[0].full_name,'Демо: Оновлено');
  const sheet=repo().sheet('contacts');assert.deepEqual(sheet.getRange(1,1,1,4).getValues()[0],['id','client_id','version','data_json']);
 });
+
+test('Calendar DST: після відхилення дати можна змінити час без застряглого pending',async()=>{
+ const {call,repo}=fixture();
+ const service=new Service(async(method,request)=>{
+  if(method==='crmMutate'&&request.action==='addRelated'&&
+    request.args?.input?.calendar_action?.time==='03:30'){
+   throw Object.assign(Error('Виберіть іншу годину.'),{code:'CALENDAR_INVALID_TIME'});
+  }
+  return call(method,request);
+ },randomUUID);
+ await service.reload();
+ const c=await service.saveClient(client);
+ const action={title:'Демо дія',date:'2026-10-25',time:'03:30',duration_minutes:30,reminder_minutes:15};
+ const input={client_id:c.id,type:'Дзвінок',summary:'Синтетичний тест',calendar_action:action};
+ await assert.rejects(service.addRelated('interactions',input),{code:'CALENDAR_INVALID_TIME'});
+ assert.equal(service.pending,null);
+ assert.equal(repo().read().interactions.length,0);
+ await service.addRelated('interactions',{...input,calendar_action:{...action,time:'04:30'}});
+ assert.equal(service.pending,null);
+ assert.equal(repo().read().interactions.length,1);
+ assert.equal(repo().read().interactions[0].calendar_action.time,'04:30');
+});

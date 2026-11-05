@@ -1,0 +1,88 @@
+# CRM 1.4 release
+name: CRM 1.4 – підготовка коду робочого Apps Script
+
+# Тільки одноразовий явний push-коміт; НЕ публікує WebApp і НЕ змінює робочу Sheets.
+# Дозвіл власника 05.11.2026: один HEAD-only production clasp push CRM 1.4; deployment version 6 не чіпати.
+on:
+  push:
+    branches:
+      - codex/crm-1-4-workflow-upgrade
+    paths:
+      - .github/workflows/apps-script-production-stage.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-apps-script-production-source
+  cancel-in-progress: false
+
+jobs:
+  stage-source:
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/crm-1-4-workflow-upgrade' && startsWith(github.event.head_commit.message, 'release: stage CRM 1.4 production source') }}
+    name: Перевірка і завантаження HEAD коду без оновлення веброзгортання
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Ключ CLASPRC_JSON вже авторизований власником у crm-staging.
+    # Це ТИМЧАСОВИЙ релізний етап, не постійний доступ до production.
+    environment: crm-staging
+    steps:
+      - name: Отримати перевірений код
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Налаштувати Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Всі тести, збірка і контроль складу
+        run: |
+          npm test
+          npm run build
+          node scripts/verify-cloud-release.js
+      - name: Перевірити узгоджений production Script ID, ізоляцію і приватний маніфест
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CRM_STAGING_SCRIPT_ID: ${{ secrets.CRM_STAGING_SCRIPT_ID }}
+          CRM_PRODUCTION_SCRIPT_ID: ${{ secrets.CRM_PRODUCTION_SCRIPT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          node <<'NODE'
+          const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
+          const credentials=process.env.CLASPRC_JSON||'';
+          const staging=(process.env.CRM_STAGING_SCRIPT_ID||'').trim();
+          const production=(process.env.CRM_PRODUCTION_SCRIPT_ID||'').trim();
+          if(!credentials||!staging||!production)throw Error('Не налаштовані приватні секрети проєкту.');
+          if(staging===production)throw Error('Production і staging Script ID збігаються; зупинено.');
+          const expected='a15df15bd699dd97b75f96d200ece8705f703d9196edfda0ec887dc005e49890';
+          if(crypto.createHash('sha256').update(production).digest('hex')!==expected)
+            throw Error('Production Script ID не відповідає раніше звіреному власником.');
+          try {
+            const parsed=JSON.parse(credentials);
+            if(!parsed.tokens && !parsed.token)throw Error('Немає OAuth-даних.');
+          } catch {throw Error('Некоректні захищені дані OAuth clasp.');}
+          const manifest=JSON.parse(fs.readFileSync('dist/apps-script/appsscript.json','utf8'));
+          if(manifest.webapp?.access!=='MYSELF'||manifest.webapp?.executeAs!=='USER_ACCESSING')
+            throw Error('Небезпечна конфігурація доступу WebApp.');
+          fs.writeFileSync(path.join(os.homedir(),'.clasprc.json'),credentials,{mode:0o600});
+          fs.writeFileSync('.clasp.json',JSON.stringify({scriptId:production,rootDir:'dist/apps-script'}),{mode:0o600});
+          process.stdout.write('Перевірено production-ідентифікатор і приватний маніфест.\n');
+          NODE
+      - name: Завантажити лише вихідний код у HEAD production Apps Script
+        shell: bash
+        run: |
+          # Не виконується clasp deploy, deploy --deploymentId чи changes of Script Properties.
+          if ! npm exec --yes --package=@google/clasp@3.4.1 -- clasp push --force >"${RUNNER_TEMP}/crm-production-clasp.log" 2>&1; then
+            echo 'Не вдалося завантажити код. Вебзастосунок залишився на попередній версії.'
+            exit 1
+          fi
+          echo 'Код CRM 1.4 завантажений у HEAD production Apps Script. Чинне WebApp розгортання НЕ змінено.'
+      - name: Прибрати локальні OAuth-файли
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.clasprc.json" ".clasp.json" "${RUNNER_TEMP}/crm-production-clasp.log"

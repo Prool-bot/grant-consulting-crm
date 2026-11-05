@@ -1,0 +1,95 @@
+name: CRM 1.4 — Apps Script тестове оновлення
+
+# OAuth-секрет читається із середовища crm-staging.
+# Явний запуск на робочій гілці, поки PR на прийманні.
+# Перевірка погодженого Script ID без його оприлюднення: контроль SHA-256.
+# Тестове оновлення: нові нагадування — Europe/Istanbul; старі зберігають Europe/Kyiv.
+# Тестове оновлення: лише read-only перевірка перетворення Istanbul -> UTC без подій.
+# Тестове оновлення: ізольований read-only Sheets preflight і синтетичний E2E тест без подій.
+# Усунення false negative: тестову версію визначає SHA-256 затвердженого Script ID, не CRM_ENVIRONMENT.
+# Оновлення read-only приймання: перевірка SHA-256 журналу та дев'яти проєкцій без будь-якого відновлення.
+# Тестове оновлення: окрема синтетична scratch-таблиця для реальних CRUD, без клієнтської CRM і Calendar.
+# Дозволений власником одноразовий CRM→Calendar smoke 06.11.2026 11:00 Istanbul, із одноразовим claim проти дублів.
+# Контрольована синхронізація read-only helper для показу результату Calendar preflight в редакторі.
+# Корекція: перевірка тепер має видиме у Run меню ім'я без кінцевого підкреслення.
+# Оновлення тестового коду: показувати попередження про UTC замість Europe/Kyiv без зміни Calendar.
+# Повторне тестове завантаження: зміни валідації часового поясу Kyiv/DST після 164 тестів.
+# Тестовий backup/restore CRM 1.4 лише у нових окремих синтетичних Sheets; production не чіпаємо.
+on:
+  push:
+    branches:
+      - codex/crm-1-4-workflow-upgrade
+    paths:
+      - .github/workflows/apps-script-staging.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-apps-script-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Перевірка та оновлення ТІЛЬКИ тестового Apps Script
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/crm-1-4-workflow-upgrade' && startsWith(github.event.head_commit.message, 'staging: run CRM 1.4') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-staging
+    steps:
+      - name: Отримати перевірений код
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Налаштувати Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Повний контроль тестів та приватної збірки
+        run: |
+          npm test
+          npm run build
+          node scripts/verify-cloud-release.js
+      - name: Підготувати закриті параметри, перевірити ізоляцію від production
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CRM_STAGING_SCRIPT_ID: ${{ secrets.CRM_STAGING_SCRIPT_ID }}
+          CRM_PRODUCTION_SCRIPT_ID: ${{ secrets.CRM_PRODUCTION_SCRIPT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          node <<'NODE'
+          const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
+          const credentials=process.env.CLASPRC_JSON||'';
+          const staging=(process.env.CRM_STAGING_SCRIPT_ID||'').trim();
+          const production=(process.env.CRM_PRODUCTION_SCRIPT_ID||'').trim();
+          if (!staging || !production) throw Error('Не встановлено Script ID у crm-staging.');
+          // У публічному workflow зберігаємо лише контрольний хеш, не Script ID.
+          const expectedStagingHash='57ce0d272f5a4fd0ad8ebf73376f96601ddddb3623f43dd80fe6f2f171be0f7f';
+          if (crypto.createHash('sha256').update(staging).digest('hex')!==expectedStagingHash) {
+            throw Error('CRM_STAGING_SCRIPT_ID не відповідає погодженому тестовому проєкту.');
+          }
+          if (!credentials) throw Error('Відсутній CLASPRC_JSON у crm-staging.');
+          if(staging===production)throw Error('ЗАБОРОНЕНО: тестовий Script ID збігається з production!');
+          try {JSON.parse(credentials);}catch{throw Error('Некоректний формат захищеної авторизації clasp.');}
+          if(!/^[a-zA-Z0-9_-]{20,}$/.test(staging)||!/^[a-zA-Z0-9_-]{20,}$/.test(production))throw Error('Некоректний Script ID.');
+          fs.writeFileSync(path.join(os.homedir(),'.clasprc.json'),credentials,{mode:0o600});
+          fs.writeFileSync('.clasp.json',JSON.stringify({scriptId:staging,rootDir:'dist/apps-script'}),{mode:0o600});
+          process.stdout.write('Тестовий Script ID підтверджено як відмінний від production.\n');
+          NODE
+      - name: Завантажити код лише в тестовий Apps Script (без публікації)
+        shell: bash
+        run: |
+          if ! npm exec --yes --package=@google/clasp@3.4.1 -- clasp push --force >"${RUNNER_TEMP}/crm-clasp.log" 2>&1; then
+            echo 'clasp push завершився помилкою. Перевірте OAuth і право редагування тестового проєкту.'
+            exit 1
+          fi
+          echo 'Код завантажено в тестовий Apps Script.'
+      - name: Видалити тимчасові облікові файли
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.clasprc.json" ".clasp.json" "${RUNNER_TEMP}/crm-clasp.log"

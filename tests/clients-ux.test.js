@@ -23,7 +23,7 @@ test('Сортування агрегатів: числові значення, 
 });
 function ui(){const context=vm.createContext({D,Intl,Date,window:{addEventListener(){}},document:{addEventListener(){}},escapeHtml:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')});vm.runInContext(fs.readFileSync('source/web/m2.js','utf8'),context);return context;}
 test('Форматування підсумків: невідоме не нуль, часткові суми позначені',()=>{
- const u=ui();assert.equal(u.summaryMoney({},'requested'),'Не вказано');assert.match(u.summaryMoney({requested:{EUR:0,UAH:12},requested_unknown:1},'requested'),/0 EUR · 12 UAH · Частина сум невідома/);
+ const u=ui();assert.equal(u.summaryMoney({},'requested'),'Не вказано');assert.match(u.summaryMoney({requested:{EUR:0,UAH:12},requested_unknown:1},'requested'),/0,00 EUR · 12,00 UAH · Частина сум невідома/);
 });
 test('Історія: стабільний порядок, Kyiv узимку й улітку, ISO джерела незмінне',()=>{
  const u=ui();assert.match(u.kyivDateTime('2026-01-01T22:30:00Z'),/02.01.2026.*00:30/);assert.match(u.kyivDateTime('2026-07-01T21:30:00Z'),/02.07.2026.*00:30/);
@@ -32,7 +32,7 @@ test('Історія: стабільний порядок, Kyiv узимку й 
 });
 test('Досьє: групи, старі реквізити, приховані порожні та індивідуальні поля',()=>{
  const u=ui(),c={type:'ngo',short_name:'Демо',website:'https://example.test',geography:'Демо регіон',competencies:'Демо навичка',next_action_at:base.deadline};
- const html=u.dossierView(c);assert.match(html,/Демо регіон/);assert.match(html,/https:\/\/example.test/);assert.doesNotMatch(html,/Демо навичка|Наступна дія|ЄДРПОУ/);assert.match(html,/data-edit-dossier/);assert.match(u.dossierView({...c,type:'individual'}),/Демо навичка/);assert.equal(c.competencies,'Демо навичка');
+ const html=u.dossierView(c);assert.match(html,/Демо регіон/);assert.match(html,/https:\/\/example.test/);assert.doesNotMatch(html,/Демо навичка|Наступна дія|ЄДРПОУ/);assert.doesNotMatch(html,/Відомості ще не заповнено|data-edit-dossier/);assert.match(u.dossierView({...c,type:'individual'}),/Демо навичка/);assert.equal(c.competencies,'Демо навичка');
 });
 test('Контакти: екранування та безпечні посилання',()=>{
  const u=ui();assert.match(u.contactLink('demo@example.test','email'),/mailto:/);assert.match(u.contactLink('+380 (00) 123-45-67','phone'),/tel:\+380001234567/);

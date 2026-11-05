@@ -22,7 +22,7 @@ test('Вкладка заявок: сім колонок, лічильники, 
  assert.match(content.innerHTML,/Усього: 1/);assert.match(content.innerHTML,/Подано · рішення очікується: <strong>1/);
  assert.match(content.innerHTML,/#application\/new\/demo-client/);
  const html=content.querySelector('tbody').innerHTML;
- assert.match(html,/application-row submitted/);assert.match(html,/Архів/);assert.match(html,/0 UAH/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/demo-b|demo-c/);
+ assert.match(html,/application-row submitted/);assert.match(html,/Архів/);assert.match(html,/0,00 UAH/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/demo-b|demo-c/);
  assert.equal(JSON.stringify(rows),before);
 });
 

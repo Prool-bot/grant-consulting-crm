@@ -56,7 +56,7 @@ class Service {
    // Та сама бізнес-валідація до мережевого виклику; зміни лише в тимчасовій копії.
    const repository=new Core.LocalRepository();repository.state=JSON.parse(JSON.stringify(this.state));
    const service=new Core.CrmService(repository,this.uuid);
-   const argumentsByAction={saveCatalog:[args.table,args.input,args.id,args.version],removeCatalog:[args.table,args.id,args.version,args.confirmed],saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input]};
+   const argumentsByAction={saveCatalog:[args.table,args.input,args.id,args.version],removeCatalog:[args.table,args.id,args.version,args.confirmed],saveContact:[args.input,args.id,args.version],saveClient:[args.input,args.id,args.version],saveApplication:[args.input,args.id,args.version],clientAction:[args.id,args.action,args.confirmed],applicationAction:[args.id,args.action],deleteApplication:[args.id,args.confirmed],addRelated:[args.table,args.input],updateCalendarAction:[args.id,args.action,args.version]};
    service[action](...argumentsByAction[action]);
    this.pending={signature,request:JSON.parse(JSON.stringify({action,args,sync:true,revision:this.state.revision,requestId:this.uuid()})),acknowledged:false};
   }
@@ -68,7 +68,7 @@ class Service {
     try{this.applySync(response.sync);}catch{await this.loadSnapshot();}
    }else await this.loadSnapshot();
    const result=response?.protocol===1?response.result:response;this.pending=null;ok=true;return result;
-  }catch(error){if(error.code==='CONFLICT'){this.pending=null;}throw error;}finally{this.busy=false;this.record(action,start,ok);}
+  }catch(error){if(['CONFLICT','CALENDAR_INVALID_TIME'].includes(error.code)){this.pending=null;}throw error;}finally{this.busy=false;this.record(action,start,ok);}
  }
  saveCatalog(table,input,id,version){return this.mutate('saveCatalog',{table,input,id,version});}
  removeCatalog(table,id,version,confirmed){return this.mutate('removeCatalog',{table,id,version,confirmed});}
@@ -79,6 +79,9 @@ class Service {
  applicationAction(id,action){return this.mutate('applicationAction',{id,action});}
  deleteApplication(id,confirmed){return this.mutate('deleteApplication',{id,confirmed});}
  addRelated(table,input){return this.mutate('addRelated',{table,input});}
+ updateCalendarAction(id,action,version){return this.mutate('updateCalendarAction',{id,action,version});}
+ async checkCalendar(){return this.call('crmCalendarCheck',{});}
+ async syncCalendar(){const result=await this.call('crmCalendarSync',{});await this.reload();return result;}
 }
 const api={Service};if(typeof module!=='undefined')module.exports=api;else root.CrmRemote=api;
 })(globalThis);

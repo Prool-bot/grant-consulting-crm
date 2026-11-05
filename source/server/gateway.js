@@ -53,6 +53,7 @@ function mutate(repository,uuid,request) {
     case 'applicationAction': return service.applicationAction(a.id,a.action);
     case 'deleteApplication': return service.deleteApplication(a.id,a.confirmed===true);
     case 'addRelated': return service.addRelated(a.table,a.input);
+    case 'updateCalendarAction': return service.updateCalendarAction(a.id,a.action,a.version);
     default: throw Error('Невідома дія.');
   }
 }
