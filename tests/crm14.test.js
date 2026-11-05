@@ -53,6 +53,11 @@ test('CRM 1.4: локальний код інтерфейсу — суми з к
  vm.runInContext(code,context);
  assert.equal(context.parseGrantAmount('12500,50'),12500.5);
  assert.equal(context.parseGrantAmount('12500.00'),12500);
+ assert.equal(context.parseGrantAmount('12500,00'),12500);
+ assert.equal(context.parseGrantAmount('12 500,25'),12500.25);
+ assert.equal(context.moneyFormValue(12500),'12500,00');
+ assert.equal(context.moneyFormValue(12500.5),'12500,50');
+ assert.equal(context.applicationAmount(0,'UAH'),'0,00 UAH');
  assert.throws(()=>context.parseGrantAmount('1,234'),/Сума/);
  assert.equal(context.projectMonths({project_start_date:'2026-11-01',project_end_date:'2027-02-28'}),4);
  assert.equal(context.projectMonths({project_start_date:'2026-11-01',project_end_date:'2026-11-30'}),1);
