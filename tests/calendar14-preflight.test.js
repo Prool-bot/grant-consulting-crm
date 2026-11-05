@@ -12,9 +12,9 @@ test('CRM calendar preflight: показує OK, не торкаючись Sheet
  };
  vm.createContext(sandbox);
  const source=fs.readFileSync('source/server/Code.gs','utf8');
- const functionText=source.slice(source.indexOf('function verifyCrmCalendarAccess_()'),source.indexOf('function crmCalendarSync()'));
- assert.ok(functionText.startsWith('function verifyCrmCalendarAccess_()'));
- vm.runInContext(functionText+'\nverifyCrmCalendarAccess_();',sandbox);
+ const functionText=source.slice(source.indexOf('function verifyCrmCalendarAccess()'),source.indexOf('function crmCalendarSync()'));
+ assert.ok(functionText.startsWith('function verifyCrmCalendarAccess()'));
+ vm.runInContext(functionText+'\nverifyCrmCalendarAccess();',sandbox);
  assert.equal(logs[0],'CRM_CALENDAR_CHECK_OK; primary=true; timeZone=Europe/Kyiv');
 });
 test('CRM calendar preflight: відмова відображає лише код',()=>{
@@ -25,8 +25,14 @@ test('CRM calendar preflight: відмова відображає лише ко�
  };
  vm.createContext(sandbox);
  const source=fs.readFileSync('source/server/Code.gs','utf8');
- const functionText=source.slice(source.indexOf('function verifyCrmCalendarAccess_()'),source.indexOf('function crmCalendarSync()'));
- vm.runInContext(functionText+'\nverifyCrmCalendarAccess_();',sandbox);
+ const functionText=source.slice(source.indexOf('function verifyCrmCalendarAccess()'),source.indexOf('function crmCalendarSync()'));
+ vm.runInContext(functionText+'\nverifyCrmCalendarAccess();',sandbox);
  assert.equal(logs[0],'CRM_CALENDAR_CHECK_FAILED; code=UNAVAILABLE');
  assert.equal(logs.join(' ').includes('Private test details'),false);
+});
+
+test('CRM calendar preflight: функція доступна у Run меню без приватного суфікса',()=>{
+ const source=fs.readFileSync('source/server/Code.gs','utf8');
+ assert.match(source,/^function verifyCrmCalendarAccess\(\)/m);
+ assert.doesNotMatch(source,/^function verifyCrmCalendarAccess_\(\)/m);
 });
