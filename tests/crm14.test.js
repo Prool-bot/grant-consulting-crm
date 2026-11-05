@@ -23,6 +23,19 @@ test('CRM 1.4: соті в сумах зберігаються й не зник�
  const next=new CrmService(repo).data().applications[0];
  assert.equal(next.amount,12500.5);assert.equal(next.award_amount,4000.25);
 });
+test('CRM 1.4: сервер відхиляє дробові копійки та небезпечну точність суми',()=>{
+ const repo=new LocalRepository(),service=new CrmService(repo),c=service.saveClient(client);
+ for(const field of ['amount','award_amount']){
+  assert.throws(()=>service.saveApplication({...application,client_id:c.id,[field]:12.345}),/двох десяткових/);
+ }
+ assert.throws(()=>service.saveApplication({...application,client_id:c.id,amount:Number.MAX_SAFE_INTEGER}),/двох десяткових/);
+ const saved=service.saveApplication({...application,client_id:c.id,amount:12500.50,award_amount:0.01});
+ assert.equal(saved.award_amount,0.01);
+ // До CRM 1.4 могли потрапити суми з понад двома знаками; інші операції не блокуються.
+ repo.transaction(s=>{s.applications[0].amount=12.345;});
+ service.saveClient({...client,short_name:'Синтетична ГО'},c.id,c.version);
+ assert.equal(repo.read().applications[0].amount,12.345);
+});
 test('CRM 1.4: дати проєкту перевіряються і зберігаються без зміни схеми',()=>{
  const repo=new LocalRepository(),service=new CrmService(repo),c=service.saveClient(client);
  const a=service.saveApplication({...application,client_id:c.id,project_start_date:'2026-11-01',project_end_date:'2027-02-28'});

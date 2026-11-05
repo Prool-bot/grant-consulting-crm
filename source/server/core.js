@@ -158,6 +158,12 @@ class CrmService {
   }
   saveApplication(input,id,version) {
     validateApplication(input);
+    // Перевірка лише нових введених сум: старі записи з більшою точністю не блокують CRM.
+    for(const key of ['amount','award_amount'])if(input[key]!=null){
+      const cents=input[key]*100;
+      if(!Number.isSafeInteger(Math.round(cents))||Math.abs(cents-Math.round(cents))>1e-7)
+        throw Error('Сума має містити не більше двох десяткових знаків.');
+    }
     return this.repository.transaction(s=>{ if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Оберіть наявного клієнта.');
       const old=id?s.applications.find(a=>a.id===id&&!a.deleted_at):null;
       if(id&&(!old||old.version!==version)) throw Error('Заявку змінено або видалено. Оновіть сторінку.');

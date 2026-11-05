@@ -4,9 +4,10 @@
 
 ## Поточний стан
 
-У `.github/workflows/apps-script-staging.yml` підготовлено **лише ручну публікацію коду в окремий тестовий Apps Script** (без створення webapp deployment та без змін продуктивного проєкту).
+У `.github/workflows/apps-script-staging.yml` підготовлено **контрольоване завантаження коду тільки в окремий тестовий Apps Script** (без створення WebApp deployment і без змін робочої CRM).
 
-- Запуск можливий тільки із гілки `main`, після появи workflow на основній гілці; поки CRM 1.4 живе в **draft PR**, він не запускається.
+- Staging запускається через `push` **лише** у гілку `codex/crm-1-4-workflow-upgrade` зі зміною самого `.github/workflows/apps-script-staging.yml` і повідомленням коміту, що починається з `staging: run CRM 1.4`. Звичайні коміти та злиття PR самі по собі не запускають цей процес.
+- 05.11.2026 контрольований staging workflow успішно завантажив код у тестовий Apps Script. Це **не** означає, що пройдено приймання реального Google Calendar.
 - Усі тести, збірка і `verify-cloud-release` виконуються **до** будь-якого підключення Google.
 - Обов'язкові три secret у GitHub Environment `crm-staging`:
   - `CLASPRC_JSON` — закритий JSON з OAuth-даними **цього власника** після одноразового `clasp login`.
@@ -45,7 +46,7 @@ GitHub → репозиторій CRM → **Settings → Environments → New en
 
 У гілці `codex/crm-1-4-workflow-upgrade` staging запускається лише після push коміту зі зміною цього workflow та повідомленням, що починається з `staging: run CRM 1.4`. GitHub запускає перевірки й завантажує код після звірки погодженого тестового Script ID. Якщо бракує секретів, додайте їх у `crm-staging` і повторіть той самий запуск через **Re-run failed jobs**.
 
-*Це ще не публікація живої CRM і не створення тестових подій в основному Google Calendar.* Для повного e2e необхідні окремі Script Properties із синтетичною Google Sheets, перевірка OAuth Calendar, ручні smoke-тести і лише потім підготовка окремого захищеного production workflow із збереженням чинного webapp deployment ID.
+*Це ще не публікація живої CRM і не створення тестових подій в основному Google Calendar.* Для повного e2e необхідні окремі Script Properties із синтетичною Google Sheets, перевірка OAuth Calendar, ручні smoke-тести та контроль резервної копії. `.github/workflows/apps-script-production-stage.yml` уже існує, але звичайний коміт пропускає його завдання. Спеціально дозволений релізний коміт може завантажити **HEAD-код у production Apps Script**, тому його **не створювати до окремого рішення власника після приймання**. Навіть цей процес не оновлює чинний WebApp deployment; його ID та адресу необхідно зберегти.
 
 ## Контроль безпеки
 
