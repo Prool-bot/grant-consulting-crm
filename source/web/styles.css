@@ -35,3 +35,27 @@ dialog button { min-height:44px; }
 .clients-table{min-width:1510px}.clients-table th:nth-child(1){width:70px}.clients-table th:nth-child(2){width:340px}.clients-table th:nth-child(3){width:100px}.clients-table th:nth-child(4){width:100px}.clients-table th:nth-child(5){width:90px}.clients-table th:nth-child(6){width:120px}.clients-table th:nth-child(7){width:150px}.clients-table th:nth-child(8){width:110px}.clients-table th:nth-child(9),.clients-table th:nth-child(10){width:70px}.clients-table th:nth-child(11){width:220px}.clients-table td{overflow-wrap:anywhere}.catalog-clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:2.8em;line-height:1.4}.social-editor{min-width:0;grid-column:1/-1}.social-editor input{max-width:100%}.clients-table textarea{width:100%;min-width:0;box-sizing:border-box}
 
 .clients-table th:nth-child(4){width:120px}.clients-table th button{padding:8px;overflow-wrap:normal}.clients-table th button span{white-space:nowrap}
+
+/* CRM 1.4: зрозумілі отримані гранти та друк лише заповнених полів */
+.received-count { color:#12633e; font-weight:750; }
+.application-row.won { background:#e8f6ed!important; }
+.application-row.won td:last-child { color:#12633e; font-weight:750; }
+.client-row small {display:block;font-size:12px;margin-top:3px}
+.client-row small a {white-space:nowrap}
+.staff-editor,.social-editor {border:1px solid var(--border);border-radius:10px;padding:14px;min-width:0}
+.staff-row {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px}
+.staff-row label {min-width:0}
+#crm-print-sheet {display:none}
+@media(max-width:620px){.staff-row{grid-template-columns:1fr}}
+@media print{
+ @page {size:A4;margin:15mm}
+ body {background:white;color:#111;font-size:11pt}
+ body>*:not(#crm-print-sheet){display:none!important}
+ #crm-print-sheet {display:block!important;position:static!important;max-width:none;margin:0;padding:0}
+ #crm-print-sheet h1 {font-size:19pt;margin:0 0 8pt}
+ #crm-print-sheet h2 {font-size:14pt;margin:0 0 16pt}
+ #crm-print-sheet dl {display:block}
+ #crm-print-sheet dl>div {display:grid;grid-template-columns:38% 62%;border-bottom:1px solid #ddd;padding:6pt 0;break-inside:avoid}
+ #crm-print-sheet dt {font-weight:700;overflow-wrap:anywhere}
+ #crm-print-sheet dd {margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+}
