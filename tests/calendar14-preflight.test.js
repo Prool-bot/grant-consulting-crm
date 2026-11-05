@@ -36,3 +36,19 @@ test('CRM calendar preflight: функція доступна у Run меню б
  assert.match(source,/^function verifyCrmCalendarAccess\(\)/m);
  assert.doesNotMatch(source,/^function verifyCrmCalendarAccess_\(\)/m);
 });
+
+test('CRM calendar preflight: UTC у календарі власника не вважається помилкою OAuth, але дає попередження',()=>{
+ const logs=[];
+ const sandbox={
+  console:{log:s=>logs.push(s)},
+  crmCalendarCheck:()=>({ok:true,value:{ready:true,primary:true,timeZone:'UTC'}})
+ };
+ vm.createContext(sandbox);
+ const source=fs.readFileSync('source/server/Code.gs','utf8');
+ const functionText=source.slice(source.indexOf('function verifyCrmCalendarAccess()'),source.indexOf('function crmCalendarSync()'));
+ vm.runInContext(functionText+'\nverifyCrmCalendarAccess();',sandbox);
+ assert.deepEqual(logs,[
+  'CRM_CALENDAR_CHECK_OK; primary=true; timeZone=UTC',
+  'CRM_CALENDAR_TIMEZONE_WARNING; crmTimeZone=Europe/Kyiv; calendarTimeZone=UTC'
+ ]);
+});
