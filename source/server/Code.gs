@@ -92,6 +92,19 @@ function crmCalendarCheck() {
     return {ready:true,primary:calendar.isMyPrimaryCalendar(),timeZone:calendar.getTimeZone()};
   });
 }
+// Лише ручна перевірка в редакторі тестового Apps Script: жодних записів.
+ // Виводимо мінімальний результат, бо Apps Script не показує повернене значення
+ // crmCalendarCheck() у стандартному журналі виконання.
+function verifyCrmCalendarAccess_() {
+  var result=crmCalendarCheck();
+  if(result.ok===true&&result.value&&result.value.ready===true) {
+    console.log('CRM_CALENDAR_CHECK_OK; primary='+String(result.value.primary===true)+
+      '; timeZone='+String(result.value.timeZone||''));
+  } else {
+    // Ніколи не журналюємо OAuth-токени, власника або сирі Google-помилки.
+    console.log('CRM_CALENDAR_CHECK_FAILED; code='+String(result.code||'UNAVAILABLE'));
+  }
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
