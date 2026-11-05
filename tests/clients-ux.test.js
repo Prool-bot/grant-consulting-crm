@@ -32,7 +32,7 @@ test('Історія: стабільний порядок, Kyiv узимку й 
 });
 test('Досьє: групи, старі реквізити, приховані порожні та індивідуальні поля',()=>{
  const u=ui(),c={type:'ngo',short_name:'Демо',website:'https://example.test',geography:'Демо регіон',competencies:'Демо навичка',next_action_at:base.deadline};
- const html=u.dossierView(c);assert.match(html,/Демо регіон/);assert.match(html,/https:\/\/example.test/);assert.doesNotMatch(html,/Демо навичка|Наступна дія|ЄДРПОУ/);assert.match(html,/data-edit-dossier/);assert.match(u.dossierView({...c,type:'individual'}),/Демо навичка/);assert.equal(c.competencies,'Демо навичка');
+ const html=u.dossierView(c);assert.match(html,/Демо регіон/);assert.match(html,/https:\/\/example.test/);assert.doesNotMatch(html,/Демо навичка|Наступна дія|ЄДРПОУ/);assert.doesNotMatch(html,/Відомості ще не заповнено|data-edit-dossier/);assert.match(u.dossierView({...c,type:'individual'}),/Демо навичка/);assert.equal(c.competencies,'Демо навичка');
 });
 test('Контакти: екранування та безпечні посилання',()=>{
  const u=ui();assert.match(u.contactLink('demo@example.test','email'),/mailto:/);assert.match(u.contactLink('+380 (00) 123-45-67','phone'),/tel:\+380001234567/);
