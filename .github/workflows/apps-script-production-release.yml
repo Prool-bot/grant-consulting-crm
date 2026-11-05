@@ -86,8 +86,19 @@ jobs:
           const raw=fs.readFileSync(file,'utf8').replace(/\x1b\[[0-9;]*m/g,'');
           const found=[...raw.matchAll(/^\s*-\s+([^\s]+)\s+@(HEAD|\d+)(?:\s+-.*)?$/gm)].map(x=>({id:x[1],version:x[2]}));
           if(!found.length)throw Error('Не вдалося безпечно розібрати існуючі deployments — NO GO');
-          const candidates=found.filter(d=>d.version==='6' && /^[a-zA-Z0-9_-]{20,}$/.test(d.id));
-          if(candidates.length!==1)throw Error('Активний deployment версії 6 не ідентифіковано ОДНОЗНАЧНО — NO GO');
+          // Зі скриншота власника взято ТІЛЬКИ SHA-256 21-символьного префікса
+          // активного deployment. Ні частини ID, ні цілий ID у GitHub НЕ публікуємо.
+          const crypto=require('node:crypto');
+          const approvedPrefixHash='98f3c3a8a1e30da116f74965d4c3ef6f2f92609acdad7cb83fe35a6204e2f38f';
+          const correctPrefix=id=>crypto.createHash('sha256').update(id.slice(0,21)).digest('hex')===approvedPrefixHash;
+          const candidates=found.filter(d=>d.version==='6' &&
+            /^[a-zA-Z0-9_-]{20,}$/.test(d.id) && correctPrefix(d.id));
+          // Виводимо ЛИШЕ агрегати для діагностики, без приватних deployment IDs.
+          process.stdout.write('Deployment preflight: total='+found.length+
+            '; version6='+found.filter(d=>d.version==='6').length+
+            '; screenshotPrefixMatches='+found.filter(d=>correctPrefix(d.id)).length+
+            '; exactCandidates='+candidates.length+'\\n');
+          if(candidates.length!==1)throw Error('Не знайдено ОДНОЗНАЧНО дозволений на скриншоті deployment версії 6 — NO GO');
           fs.writeFileSync(path.join(process.env.RUNNER_TEMP,'approved-deployment-id'),candidates[0].id,{mode:0o600});
           fs.writeFileSync(path.join(process.env.RUNNER_TEMP,'baseline-deployments.json'),JSON.stringify(found),{mode:0o600});
           process.stdout.write('Підтверджено рівно одне існуюче deployment на версії 6; нове не створюватимемо.\n');
