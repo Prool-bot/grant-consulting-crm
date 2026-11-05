@@ -85,22 +85,24 @@ function contactsView(rows) {
  return '<div class="contact-cards">'+rows.map(r=>'<article class="contact-card"><h3>'+escapeHtml(r.full_name)+'</h3><dl>'+[['Посада',escapeHtml(r.role||'—')],['Телефон',contactLink(r.phone,'phone')],['E-mail',contactLink(r.email,'email')],['Чим займається',escapeHtml(r.responsibilities||'—')],['Бажаний канал',escapeHtml(r.preferred_channel||'—')]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+value+'</dd></div>').join('')+'</dl><button data-edit-contact="'+escapeHtml(r.id)+'">Редагувати контакт</button></article>').join('')+'</div>';
 }
 function calendarActionForm() {
- const day=D.calendarDate(new Date().toISOString());
+ // Не використовуємо UTC дату браузера: у Стамбулі вже може бути наступний день.
+ const today=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Istanbul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
+ const day=[today.year,today.month,today.day].join('-');
  return '<label class="calendar-choice"><input type="checkbox" id="add-calendar-action"> Додати робочу дію в Google Calendar</label>'+
  '<fieldset id="calendar-action-fields" hidden><legend>Нагадування за клієнтом</legend><div class="form-grid">'+
  field('calendar_title','Назва дії *')+
  '<label>Дата *<input type="date" name="calendar_date" value="'+escapeHtml(day)+'"></label>'+
- '<label>Час (Europe/Kyiv) *<input type="time" name="calendar_time" value="10:00"></label>'+
+ '<label>Час (Стамбул, Europe/Istanbul) *<input type="time" name="calendar_time" value="10:00"></label>'+
  selectField('calendar_duration','Тривалість (хв)',{'15':'15','30':'30','45':'45','60':'60','90':'90','120':'120'},'30')+
  selectField('calendar_reminder','Нагадати за',{'0':'Без нагадування','5':'5 хв','10':'10 хв','15':'15 хв','30':'30 хв','60':'1 год','1440':'1 добу'},'30')+
  '</div></fieldset>';
 }
 function historyView(rows) {
  const statuses={pending:'Очікує синхронізації',syncing:'Синхронізується',synced:'У календарі',error:'Помилка синхронізації'};
- return '<p class="registry-note">Час: Europe/Kyiv. Записи незмінні після створення. Календарні дії можна скасувати.</p>'+
+ return '<p class="registry-note">Нові календарні дії: час Стамбула (Europe/Istanbul). Старі дії зберігають початковий часовий пояс. Записи незмінні після створення.</p>'+
  (sortedHistory(rows).map(r=>{
   const action=r.calendar_action;
-  const activity=action?'<div class="calendar-action"><p><strong>Календар:</strong> '+escapeHtml(action.title)+' · '+escapeHtml(action.date)+' '+escapeHtml(action.time)+' (Київ) · '+escapeHtml(statuses[action.sync_status]||'Очікує')+(action.state==='cancelled'?' · скасовано':'')+'</p><div class="actions">'+(action.state!=='cancelled'?'<button type="button" data-calendar-cancel="'+escapeHtml(r.id)+'">Скасувати дію</button>':'')+(action.sync_status==='error'?'<button type="button" data-calendar-retry="'+escapeHtml(r.id)+'">Повторити синхронізацію</button>':'')+'</div></div>':'';
+  const activity=action?'<div class="calendar-action"><p><strong>Календар:</strong> '+escapeHtml(action.title)+' · '+escapeHtml(action.date)+' '+escapeHtml(action.time)+' ('+escapeHtml(action.time_zone==='Europe/Istanbul'?'Стамбул':'Київ')+') · '+escapeHtml(statuses[action.sync_status]||'Очікує')+(action.state==='cancelled'?' · скасовано':'')+'</p><div class="actions">'+(action.state!=='cancelled'?'<button type="button" data-calendar-cancel="'+escapeHtml(r.id)+'">Скасувати дію</button>':'')+(action.sync_status==='error'?'<button type="button" data-calendar-retry="'+escapeHtml(r.id)+'">Повторити синхронізацію</button>':'')+'</div></div>':'';
   return '<article class="history-entry"><strong>'+escapeHtml(kyivDateTime(r.happened_at))+' · '+escapeHtml(r.type)+'</strong><p>'+escapeHtml(r.summary)+'</p><p>Наступний крок: '+escapeHtml(r.next_step||'—')+'</p>'+activity+'</article>';
  }).join('')||'<p>Записів ще немає.</p>');
 }
@@ -159,7 +161,7 @@ function showProfile(id,initialTab='Огляд') {
          button.disabled=true;
          try{
            const result=await crm.checkCalendar();
-           status.textContent=result.ready?(result.primary?'Основний Google Calendar доступний.':'Обраний Google Calendar доступний.')+' Часовий пояс: '+result.timeZone+'. Події не створювалися.':'Доступ до календаря не підтверджено.';
+           status.textContent=result.ready?(result.primary?'Основний Google Calendar доступний.':'Обраний Google Calendar доступний.')+' Час нових нагадувань CRM: Europe/Istanbul; часовий пояс Google Calendar: '+result.timeZone+'. Події не створювалися.':'Доступ до календаря не підтверджено.';
          }catch(error){status.textContent=error.message;}
          finally{button.disabled=false;}
        });
@@ -187,7 +189,7 @@ function showProfile(id,initialTab='Огляд') {
    bindForm(async input=>{
       if(!contacts){
         const enabled=content.querySelector('#add-calendar-action')?.checked;
-        if(enabled)input.calendar_action={title:input.calendar_title,date:input.calendar_date,time:input.calendar_time,duration_minutes:Number(input.calendar_duration),reminder_minutes:Number(input.calendar_reminder)};
+        if(enabled)input.calendar_action={title:input.calendar_title,date:input.calendar_date,time:input.calendar_time,time_zone:'Europe/Istanbul',duration_minutes:Number(input.calendar_duration),reminder_minutes:Number(input.calendar_reminder)};
         for(const key of ['calendar_title','calendar_date','calendar_time','calendar_duration','calendar_reminder'])delete input[key];
       }
       if(contact)await crm.saveContact({...input,client_id:id},contact.id,contact.version||1);
