@@ -55,7 +55,7 @@ function crmMutate(request) {
 // Синхронізація — лише за явним натисканням власника. Календар визначає Script Property,
 // CRM_CALENDAR_ID. Жодні чужі календарі не редагуємо і не створюємо тут автоматично.
 function crmCalendarLocalTime_(day,time) {
-  if(!CrmDomain.dateOnly(day)||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time))throw Error('CALENDAR_INVALID_TIME');
+  if(!CrmDomain.dateOnly(day)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('CALENDAR_INVALID_TIME');
   var value=Utilities.parseDate(day+' '+time,'Europe/Kyiv','yyyy-MM-dd HH:mm');
   if(Utilities.formatDate(value,'Europe/Kyiv','yyyy-MM-dd HH:mm')!==day+' '+time)throw Error('CALENDAR_INVALID_TIME');
   return value;
