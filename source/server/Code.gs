@@ -137,6 +137,52 @@ function verifyCrmIstanbulTime() {
     console.log('CRM_ISTANBUL_CLOCK_FAILED; case=runtime');
   }
 }
+// Тільки ручний read-only контроль ізольованої CRM_1_4_TEST_DB.
+// Ніколи не читати клієнтські рядки, не журналювати ID чи вміст комірок.
+// SHA-256 тестового Spreadsheet ID блокує випадкову перевірку production.
+function verifyCrmTestSheetConnection() {
+  var props=PropertiesService.getScriptProperties();
+  if(props.getProperty('CRM_ENVIRONMENT')!=='test') {
+    console.log('CRM_TEST_SHEET_FAILED; code=NOT_TEST_ENVIRONMENT');
+    return;
+  }
+  try {
+    CrmGateway.authorize(props,Session);
+    var id=props.getProperty('CRM_SPREADSHEET_ID');
+    var expectedIdHash='4beceb3a77dc0f78da84a4624fa646c3403dcfe0bb90c06a559d1e6074c35656';
+    if(!id||crmHash_(id)!==expectedIdHash) {
+      console.log('CRM_TEST_SHEET_FAILED; code=TEST_SHEET_MISMATCH');
+      return;
+    }
+    var book=SpreadsheetApp.openById(id);
+    var sheets={};
+    book.getSheets().forEach(function(sheet){sheets[sheet.getName()]=sheet;});
+    var entityTabs=['clients','client_profiles','contacts','interactions',
+      'grants','applications','documents','partners','client_partners'];
+    for(var i=0;i<entityTabs.length;i++) {
+      var sheet=sheets[entityTabs[i]];
+      if(!sheet) {
+        console.log('CRM_TEST_SHEET_FAILED; code=SCHEMA_MISMATCH');
+        return;
+      }
+      var headers=sheet.getRange(1,1,1,4).getValues()[0];
+      if(headers.join('|')!=='id|client_id|version|data_json') {
+        console.log('CRM_TEST_SHEET_FAILED; code=SCHEMA_MISMATCH');
+        return;
+      }
+    }
+    if(!sheets._crm_control||!sheets._crm_journal||
+       sheets._crm_control.getRange(1,1).getValue()!=='control_json'||
+       sheets._crm_journal.getRange(1,1).getValue()!=='chunk') {
+      console.log('CRM_TEST_SHEET_FAILED; code=SCHEMA_MISMATCH');
+      return;
+    }
+    console.log('CRM_TEST_SHEET_OK; entityTabs=9; control=1; journal=1; recordRowsRead=0; writes=0');
+  }catch(error) {
+    // Жодних сирих помилок Google, Spreadsheet ID, приватного заголовка файлу чи даних.
+    console.log('CRM_TEST_SHEET_FAILED; code=UNAVAILABLE');
+  }
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
