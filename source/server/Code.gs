@@ -79,7 +79,8 @@ function crmCalendarCheck() {
 }
 function crmCalendarSync() {
   return crmSafe_(function() {
-    return CrmCalendar.syncPending(crmRepository_(),crmOwnedCalendar_(),crmCalendarLocalTime_,function(){return new Date();},5);
+    var calendar=crmOwnedCalendar_();
+    return CrmCalendar.syncPending(crmRepository_(),calendar,crmCalendarLocalTime_,function(){return new Date();},5);
   });
 }
 // Запускаються вручну в редакторі власника; суфікс _ закриває виклик з браузера.
