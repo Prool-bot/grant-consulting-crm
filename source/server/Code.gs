@@ -115,6 +115,28 @@ function verifyCrmCalendarAccess() {
     console.log('CRM_CALENDAR_CHECK_FAILED; code='+String(result.code||'UNAVAILABLE'));
   }
 }
+// Тільки ручний read-only smoke-test часу Стамбула на тестовому Apps Script.
+// Не викликає CalendarApp, не читає Sheets і не створює подій.
+function verifyCrmIstanbulTime() {
+  var examples=[
+    {day:'2026-11-12',time:'10:00',utc:'2026-11-12T07:00:00.000Z'},
+    {day:'2026-07-15',time:'10:00',utc:'2026-07-15T07:00:00.000Z'},
+    {day:'2026-03-29',time:'03:30',utc:'2026-03-29T00:30:00.000Z'}
+  ];
+  try {
+    for(var i=0;i<examples.length;i++) {
+      var row=examples[i];
+      if(crmCalendarLocalTime_(row.day,row.time,'Europe/Istanbul').toISOString()!==row.utc) {
+        console.log('CRM_ISTANBUL_CLOCK_FAILED; case='+String(i+1));
+        return;
+      }
+    }
+    console.log('CRM_ISTANBUL_CLOCK_OK; zone=Europe/Istanbul; 10:00=07:00Z; samples=3; eventsCreated=0');
+  }catch(error) {
+    // Не журналюємо сирі помилки або системні відомості.
+    console.log('CRM_ISTANBUL_CLOCK_FAILED; case=runtime');
+  }
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
