@@ -9,7 +9,8 @@ const {SheetsRepository}=require('../source/adapters/sheets');
 const {CrmService}=require('../source/server/core');
 
 const source=fs.readFileSync('source/server/Code.gs','utf8');
-const probe=source.slice(source.indexOf('function verifyCrmTestDatabaseIntegrity()'));
+const probe=source.slice(source.indexOf('function verifyCrmTestDatabaseIntegrity()'),
+ source.indexOf('function verifyCrmIsolatedSyntheticCrud()'));
 const pins=[...probe.matchAll(/var expected(?:Script|Id)Hash='([a-f0-9]{64})'/g)].map(x=>x[1]);
 assert.equal(pins.length,2,'Missing staging or test sheet hash');
 const [scriptHash,sheetHash]=pins;
