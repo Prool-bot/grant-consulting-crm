@@ -30,6 +30,8 @@ function fixture({calendarId=null,owner=true,authorized=true}={}){
  };
  const ctx=vm.createContext(root);
  vm.runInContext(fs.readFileSync('source/server/Code.gs','utf8'),ctx);
+ // Код оголошує власний crmRepository_; у тесті підміняємо лише доступ до синтетичного сховища.
+ ctx.crmRepository_=()=>{calls.repositories++;return 'synthetic-repository';};
  return {calls,run:()=>vm.runInContext('crmCalendarSync()',ctx)};
 }
 
