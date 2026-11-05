@@ -53,3 +53,38 @@ test('Calendar: невалідні дата і час блокуються до 
  assert.throws(()=>convert('2026-11-12','25:30'),/CALENDAR_INVALID_TIME/);
  assert.throws(()=>convert('2026-11-12','10:99'),/CALENDAR_INVALID_TIME/);
 });
+
+test('Apps Script crmMutate відхиляє неоднозначну дату до запису у сховище',()=>{
+ let repositories=0,writes=0;
+ context.crmRepository_=()=>{repositories++;return 'synthetic-repository';};
+ context.CrmGateway={mutate:(repo,uuid,request)=>{
+  writes++;assert.equal(repo,'synthetic-repository');return request;
+ }};
+ context.Utilities.getUuid=()=> 'synthetic-id';
+ const input=(date,time)=>({action:'addRelated',args:{table:'interactions',input:{
+  calendar_action:{title:'Тест',date,time,duration_minutes:30,reminder_minutes:15}
+ }}});
+ for(const [date,time] of [['2026-03-29','03:30'],['2026-10-25','03:30']]){
+  const result=context.crmMutate(input(date,time));
+  assert.equal(result.ok,false);
+  assert.equal(result.code,'CALENDAR_INVALID_TIME');
+  assert.match(result.message,/Виберіть іншу годину/);
+ }
+ assert.equal(repositories,0);
+ assert.equal(writes,0);
+ const valid=context.crmMutate(input('2026-10-25','04:30'));
+ assert.equal(valid.ok,true);
+ assert.equal(repositories,1);
+ assert.equal(writes,1);
+});
+
+test('Apps Script crmMutate без календарної дії не потребує дозволу Google Calendar',()=>{
+ let writes=0;
+ context.crmRepository_=()=>({isolate:true});
+ context.CrmGateway={mutate:()=>{writes++;return 'synthetic-ok';}};
+ context.Utilities.getUuid=()=> 'synthetic-id';
+ const result=context.crmMutate({action:'addRelated',args:{table:'contacts',input:{full_name:'Тестовий контакт'}}});
+ assert.equal(result.ok,true);
+ assert.equal(result.value,'synthetic-ok');
+ assert.equal(writes,1);
+});
