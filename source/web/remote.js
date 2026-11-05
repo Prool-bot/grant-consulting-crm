@@ -68,7 +68,7 @@ class Service {
     try{this.applySync(response.sync);}catch{await this.loadSnapshot();}
    }else await this.loadSnapshot();
    const result=response?.protocol===1?response.result:response;this.pending=null;ok=true;return result;
-  }catch(error){if(error.code==='CONFLICT'){this.pending=null;}throw error;}finally{this.busy=false;this.record(action,start,ok);}
+  }catch(error){if(['CONFLICT','CALENDAR_INVALID_TIME'].includes(error.code)){this.pending=null;}throw error;}finally{this.busy=false;this.record(action,start,ok);}
  }
  saveCatalog(table,input,id,version){return this.mutate('saveCatalog',{table,input,id,version});}
  removeCatalog(table,id,version,confirmed){return this.mutate('removeCatalog',{table,id,version,confirmed});}
