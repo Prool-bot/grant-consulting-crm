@@ -84,7 +84,7 @@ jobs:
           const fs=require('node:fs'),path=require('node:path');
           const file=path.join(process.env.RUNNER_TEMP,'before-deployments.txt');
           const raw=fs.readFileSync(file,'utf8').replace(/\x1b\[[0-9;]*m/g,'');
-          const found=[...raw.matchAll(/^\s*-\s+([^\s]+)\s+@(HEAD|\d+)(?:\s+-.*)?$/gm)].map(x=>({id:x[1],version:x[2]}));
+          const found=[...raw.matchAll(/([A-Za-z0-9_-]{30,})\s*@(HEAD|\d+)/g)].map(x=>({id:x[1],version:x[2]}));
           if(!found.length)throw Error('Не вдалося безпечно розібрати існуючі deployments — NO GO');
           // Зі скриншота власника взято ТІЛЬКИ SHA-256 21-символьного префікса
           // активного deployment. Ні частини ID, ні цілий ID у GitHub НЕ публікуємо.
@@ -92,14 +92,14 @@ jobs:
           const approvedPrefixHash='98f3c3a8a1e30da116f74965d4c3ef6f2f92609acdad7cb83fe35a6204e2f38f';
           const correctPrefix=id=>crypto.createHash('sha256').update(id.slice(0,21)).digest('hex')===approvedPrefixHash;
           // Жодних рядків clasp або ID не виводимо — лише статистика форми.
-          const allLines=raw.split(/\\r?\\n/).filter(Boolean);
+          const allLines=raw.split(/\r?\n/).filter(Boolean);
           const tokens=[...raw.matchAll(/[A-Za-z0-9_-]{30,}/g)].map(x=>x[0]);
           process.stdout.write('Safe shape stats: lines='+allLines.length+
             '; at6Lines='+allLines.filter(l=>l.includes('@6')).length+
-            '; anywhereVersionMarkers='+[...raw.matchAll(/@(\\d+)/g)].map(x=>x[1]).join(',')+
+            '; anywhereVersionMarkers='+[...raw.matchAll(/@(\d+)/g)].map(x=>x[1]).join(',')+
             '; longTokens='+tokens.length+
             '; pinnedPrefixTokens='+tokens.filter(correctPrefix).length+
-            '; lineWordCounts='+allLines.map(l=>l.trim().split(/\\s+/).length).join(',')+'\\n');
+            '; lineWordCounts='+allLines.map(l=>l.trim().split(/\s+/).length).join(',')+'\\n');
           const candidates=found.filter(d=>d.version==='6' &&
             /^[a-zA-Z0-9_-]{20,}$/.test(d.id) && correctPrefix(d.id));
           // Виводимо ЛИШЕ агрегати для діагностики, без приватних deployment IDs.
@@ -136,7 +136,7 @@ jobs:
           const base=process.env.RUNNER_TEMP,read=n=>fs.readFileSync(path.join(base,n),'utf8');
           const id=read('approved-deployment-id');
           const before=JSON.parse(read('baseline-deployments.json'));
-          const after=[...read('after-deployments.txt').replace(/\x1b\[[0-9;]*m/g,'').matchAll(/^\s*-\s+([^\s]+)\s+@(HEAD|\d+)(?:\s+-.*)?$/gm)].map(x=>({id:x[1],version:x[2]}));
+          const after=[...read('after-deployments.txt').replace(/\x1b\[[0-9;]*m/g,'').matchAll(/([A-Za-z0-9_-]{30,})\s*@(HEAD|\d+)/g)].map(x=>({id:x[1],version:x[2]}));
           const previous=before.find(x=>x.id===id),current=after.find(x=>x.id===id);
           if(!previous||previous.version!=='6'||!current||!/^\d+$/.test(current.version)||Number(current.version)<=6)
             throw Error('Не підтверджено оновлення чинного deployment: ручний контроль обов’язковий');
