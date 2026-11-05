@@ -99,3 +99,22 @@ test('Calendar CRM: вимога окремого календаря, дозво
  const bundle=fs.readFileSync('scripts/bundle-server.js','utf8');
  assert.match(bundle,/source\/server\/calendar\.js/);
 });
+
+test('Calendar CRM: форма взаємодії має українські поля; HTML екранує назву події',()=>{
+ const vm=require('node:vm'),D=require('../source/shared/domain');
+ const context=vm.createContext({
+  D,Intl,Date,window:{addEventListener(){}},document:{addEventListener(){}},
+  escapeHtml:x=>String(x??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')
+ });
+ vm.runInContext(fs.readFileSync('source/web/m2.js','utf8'),context);
+ const form=context.calendarActionForm();
+ assert.match(form,/Додати робочу дію/);
+ assert.match(form,/calendar_date/);
+ assert.match(form,/calendar_time/);
+ assert.match(form,/calendar_reminder/);
+ const history=context.historyView([{id:'test',happened_at:'2026-11-05',summary:'Обговорення',type:'Дзвінок',calendar_action:{...todo,title:'<script>alert(1)</script>',state:'active',sync_status:'pending'}}]);
+ assert.match(history,/Очікує синхронізації/);
+ assert.match(history,/&lt;script>/);
+ assert.doesNotMatch(history,/<script>/);
+ assert.match(history,/data-calendar-cancel/);
+});
