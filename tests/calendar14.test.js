@@ -65,7 +65,7 @@ test('Calendar CRM: скасування збереженої події і за
  const {repo,service,calendar,interaction}=fixture();
  syncPending(repo,calendar,localTime);
  const row=repo.read().interactions[0];
- service.updateCalendarAction(interaction.id,'cancel',row.version);
+ service.updateCalendarAction(interaction.id,'cancel',row.version||1);
  const result=syncPending(repo,calendar,localTime);
  assert.equal(result.synced,1);assert.equal(calendar.events.size,0);
  assert.equal(repo.read().interactions[0].calendar_action.state,'cancelled');
@@ -83,7 +83,7 @@ test('Calendar CRM: помилковий event_id не змінює і не ви
   });
   if(action==='cancel'){
    const row=repo.read().interactions[0];
-   service.updateCalendarAction(interaction.id,'cancel',row.version);
+   service.updateCalendarAction(interaction.id,'cancel',row.version||1);
   }
   const result=syncPending(repo,calendar,localTime);
   assert.equal(result.failed,1);
@@ -102,7 +102,7 @@ test('Calendar CRM: скасування до створення не вплив
  const {repo,calendar,service,interaction}=fixture();
  const personal=calendar.createEvent('Особисте',localTime(todo.date,todo.time),localTime(todo.date,'11:00'),{description:'Приватне'});
  const row=repo.read().interactions[0];
- service.updateCalendarAction(interaction.id,'cancel',row.version);
+ service.updateCalendarAction(interaction.id,'cancel',row.version||1);
  const result=syncPending(repo,calendar,localTime);
  assert.equal(result.synced,1);assert.equal(result.failed,0);
  assert.equal(calendar.created,1);assert.equal(calendar.events.size,1);
