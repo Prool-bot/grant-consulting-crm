@@ -41,7 +41,8 @@ function syncPending(repository,calendar,localTime,now=()=>new Date(),limit=5) {
    if(event && !hasMarker(event,token)) {
      throw Error('CALENDAR_EVENT_ID_MISMATCH');
    }
-   const start=localTime(task.date,task.time);
+   // Збережені старі дії без time_zone тлумачимо за Kyiv; нові містять Istanbul.
+   const start=localTime(task.date,task.time,task.time_zone||'Europe/Kyiv');
    if(!(start instanceof Date)||!Number.isFinite(start.getTime()))throw Error('CALENDAR_INVALID_TIME');
    const end=new Date(start.getTime()+task.duration_minutes*60000);
    if(!event){
