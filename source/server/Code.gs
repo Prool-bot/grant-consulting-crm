@@ -52,8 +52,9 @@ function crmQuery(request) {
 function crmMutate(request) {
   return crmSafe_(function() {return CrmGateway.mutate(crmRepository_(request),function(){return Utilities.getUuid();},request);});
 }
-// Синхронізація — лише за явним натисканням власника. Календар визначає Script Property,
-// CRM_CALENDAR_ID. Жодні чужі календарі не редагуємо і не створюємо тут автоматично.
+// Синхронізація — лише за явним натисканням власника. Стандарт — його основний
+// Google Calendar; CRM_CALENDAR_ID дає змогу явно вибрати інший власний календар.
+// Жодні чужі календарі не редагуємо і не створюємо тут автоматично.
 function crmCalendarLocalTime_(day,time) {
   if(!CrmDomain.dateOnly(day)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('CALENDAR_INVALID_TIME');
   var value=Utilities.parseDate(day+' '+time,'Europe/Kyiv','yyyy-MM-dd HH:mm');
@@ -64,9 +65,10 @@ function crmCalendarSync() {
   return crmSafe_(function() {
     var props=PropertiesService.getScriptProperties();
     CrmGateway.authorize(props,Session);
+    // За замовчуванням використовуємо лише основний календар власника.
+    // Якщо власник явно задав CRM_CALENDAR_ID, використовуємо лише цей календар.
     var calendarId=props.getProperty('CRM_CALENDAR_ID');
-    if(!calendarId)throw Error('CALENDAR_NOT_CONFIGURED');
-    var calendar=CalendarApp.getCalendarById(calendarId);
+    var calendar=calendarId?CalendarApp.getCalendarById(calendarId):CalendarApp.getDefaultCalendar();
     if(!calendar||!calendar.isOwnedByMe())throw Error('CALENDAR_NOT_CONFIGURED');
     return CrmCalendar.syncPending(crmRepository_(),calendar,crmCalendarLocalTime_,function(){return new Date();},5);
   });
