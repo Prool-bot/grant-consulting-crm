@@ -38,7 +38,7 @@ function crmSafe_(action) {
   try { return {ok:true,value:action()}; }
   catch(error) {
     // Не повертаємо сирі помилки Google: вони можуть містити ID та приватні дані.
-    if(error.message==='CALENDAR_NOT_CONFIGURED')return {ok:false,code:'CALENDAR_NOT_CONFIGURED',message:'Робочий календар ще не налаштовано. Потрібна приватна CRM_CALENDAR_ID та дозвіл Calendar.'};
+    if(error.message==='CALENDAR_NOT_CONFIGURED')return {ok:false,code:'CALENDAR_NOT_CONFIGURED',message:'Основний Google Calendar недоступний для цього акаунта. Перевірте дозвіл Calendar та налаштування власника.'};
     if(error.message==='CRM12_MIGRATION_REQUIRED')return {ok:false,code:'MIGRATION_REQUIRED',message:'Потрібна ручна міграція CRM 1.2 після приватного резервного копіювання. Зверніться до інструкції випуску; дані не змінено.'};
     var conflict=/Конфлікт|змінено або видалено/.test(error.message||'');
     return {ok:false,code:conflict?'CONFLICT':'UNAVAILABLE',message:conflict?
