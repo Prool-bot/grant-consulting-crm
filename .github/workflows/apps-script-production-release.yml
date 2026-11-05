@@ -1,0 +1,139 @@
+# Owner-approved 05.11.2026: release CRM 1.4 to the ONE existing CRM 1.3 WebApp.
+# Fail closed if the existing version-6 deployment cannot be uniquely identified.
+# Never create another deployment, never push to Sheets, and never touch Script Properties.
+name: CRM 1.4 — контрольований випуск робочого WebApp
+
+on:
+  push:
+    branches:
+      - codex/crm-1-4-workflow-upgrade
+    paths:
+      - .github/workflows/apps-script-production-release.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-apps-script-production-source
+  cancel-in-progress: false
+
+jobs:
+  deploy-existing-webapp:
+    if: >-
+      ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/codex/crm-1-4-workflow-upgrade' &&
+          startsWith(github.event.head_commit.message, 'release: deploy CRM 1.4 production WebApp') }}
+    name: Оновити тільки наявний versioned WebApp, зберігаючи URL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-staging
+    steps:
+      - name: Отримати погоджений код
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Налаштувати Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Перевірити тести, збірку та безпеку маніфесту
+        run: |
+          npm test
+          npm run build
+          node scripts/verify-cloud-release.js
+      - name: Підготувати OAuth та перевірити саме production Script ID
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CRM_STAGING_SCRIPT_ID: ${{ secrets.CRM_STAGING_SCRIPT_ID }}
+          CRM_PRODUCTION_SCRIPT_ID: ${{ secrets.CRM_PRODUCTION_SCRIPT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          node <<'NODE'
+          const fs=require('node:fs'),crypto=require('node:crypto'),os=require('node:os'),path=require('node:path');
+          const credentials=process.env.CLASPRC_JSON||'';
+          const staging=(process.env.CRM_STAGING_SCRIPT_ID||'').trim();
+          const production=(process.env.CRM_PRODUCTION_SCRIPT_ID||'').trim();
+          const expected='a15df15bd699dd97b75f96d200ece8705f703d9196edfda0ec887dc005e49890';
+          if(!staging||!production||staging===production)throw Error('Небезпечні production/staging Script IDs');
+          if(crypto.createHash('sha256').update(production).digest('hex')!==expected)throw Error('Production Script ID не погоджено');
+          let parsed;
+          try{parsed=JSON.parse(credentials);}catch{throw Error('OAuth облікові дані відсутні/некоректні');}
+          if(!parsed.tokens&&!parsed.token)throw Error('OAuth credentials відсутні');
+          const manifest=JSON.parse(fs.readFileSync('dist/apps-script/appsscript.json','utf8'));
+          if(manifest.webapp?.access!=='MYSELF'||manifest.webapp?.executeAs!=='USER_ACCESSING')throw Error('Приватний WebApp маніфест порушено');
+          for(const scope of ['https://www.googleapis.com/auth/calendar','https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/userinfo.email']){
+            if(!manifest.oauthScopes.includes(scope))throw Error('Не всі OAuth scopes у погодженій збірці');
+          }
+          fs.writeFileSync(path.join(os.homedir(),'.clasprc.json'),credentials,{mode:0o600});
+          fs.writeFileSync('.clasp.json',JSON.stringify({scriptId:production,rootDir:'dist/apps-script'}),{mode:0o600});
+          process.stdout.write('Production script і приватний календарний OAuth manifest перевірені.\n');
+          NODE
+      - name: Перевірити існуючий WebApp deployment рівно на версії 6
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          if ! npm exec --yes --package=@google/clasp@3.4.1 -- clasp list-deployments >"${RUNNER_TEMP}/before-deployments.txt" 2>"${RUNNER_TEMP}/clasp-errors.txt"; then
+            echo 'Не вдалося приватно отримати список Apps Script deployments; змін не виконано.'
+            exit 1
+          fi
+          node <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const file=path.join(process.env.RUNNER_TEMP,'before-deployments.txt');
+          const raw=fs.readFileSync(file,'utf8').replace(/\x1b\[[0-9;]*m/g,'');
+          const found=[...raw.matchAll(/^\s*-\s+([^\s]+)\s+@(HEAD|\d+)(?:\s+-.*)?$/gm)].map(x=>({id:x[1],version:x[2]}));
+          if(!found.length)throw Error('Не вдалося безпечно розібрати існуючі deployments — NO GO');
+          const candidates=found.filter(d=>d.version==='6' && /^[a-zA-Z0-9_-]{20,}$/.test(d.id));
+          if(candidates.length!==1)throw Error('Активний deployment версії 6 не ідентифіковано ОДНОЗНАЧНО — NO GO');
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP,'approved-deployment-id'),candidates[0].id,{mode:0o600});
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP,'baseline-deployments.json'),JSON.stringify(found),{mode:0o600});
+          process.stdout.write('Підтверджено рівно одне існуюче deployment на версії 6; нове не створюватимемо.\n');
+          NODE
+      - name: Опублікувати CRM 1.4 В ТОМУ САМОМУ deployment ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          deployment_id="$(cat "${RUNNER_TEMP}/approved-deployment-id")"
+          # --deploymentId НЕМОЖНА прибирати: без нього clasp створює НОВИЙ WebApp URL.
+          if ! npm exec --yes --package=@google/clasp@3.4.1 -- clasp update-deployment "$deployment_id" --description "CRM 1.4 — owner-approved 2026-11-05" >"${RUNNER_TEMP}/deploy-update.txt" 2>"${RUNNER_TEMP}/clasp-errors.txt"; then
+            echo 'Оновлення versioned WebApp завершилося помилкою; потрібна ручна перевірка розгортання, НЕ повторюйте автоматично.'
+            exit 1
+          fi
+          echo 'Оновлено саме чинний WebApp deployment, без зміни deployment ID/URL.'
+      - name: Незалежно перевірити зміну версії того самого deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! npm exec --yes --package=@google/clasp@3.4.1 -- clasp list-deployments >"${RUNNER_TEMP}/after-deployments.txt" 2>"${RUNNER_TEMP}/clasp-errors.txt"; then
+            echo 'WebApp міг оновитися, але readback недоступний. Ручна перевірка необхідна.'
+            exit 1
+          fi
+          node <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const base=process.env.RUNNER_TEMP,read=n=>fs.readFileSync(path.join(base,n),'utf8');
+          const id=read('approved-deployment-id');
+          const before=JSON.parse(read('baseline-deployments.json'));
+          const after=[...read('after-deployments.txt').replace(/\x1b\[[0-9;]*m/g,'').matchAll(/^\s*-\s+([^\s]+)\s+@(HEAD|\d+)(?:\s+-.*)?$/gm)].map(x=>({id:x[1],version:x[2]}));
+          const previous=before.find(x=>x.id===id),current=after.find(x=>x.id===id);
+          if(!previous||previous.version!=='6'||!current||!/^\d+$/.test(current.version)||Number(current.version)<=6)
+            throw Error('Не підтверджено оновлення чинного deployment: ручний контроль обов’язковий');
+          if(before.length!==after.length||before.some(x=>!after.find(y=>y.id===x.id)))
+            throw Error('Виявлено зміну складу deployments — ручний контроль обов’язковий');
+          const othersUnchanged=before.every(x=>x.id===id||after.find(y=>y.id===x.id)?.version===x.version);
+          if(!othersUnchanged)throw Error('Інші deployments змінилися — ручний контроль обов’язковий');
+          process.stdout.write('CRM_1_4_PRODUCTION_DEPLOY_OK; previousVersion=6; newVersion='+current.version+'; sameDeployment=1; noAdditionalDeployments=1; otherDeploymentsUnchanged=1\n');
+          NODE
+      - name: Очистити тимчасові файли з OAuth і deployment ID
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.clasprc.json" ".clasp.json" \
+            "${RUNNER_TEMP}/approved-deployment-id" \
+            "${RUNNER_TEMP}/baseline-deployments.json" \
+            "${RUNNER_TEMP}/before-deployments.txt" \
+            "${RUNNER_TEMP}/after-deployments.txt" \
+            "${RUNNER_TEMP}/deploy-update.txt" \
+            "${RUNNER_TEMP}/clasp-errors.txt"
