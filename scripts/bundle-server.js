@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 module.exports=function bundleServer() {
   const root=path.resolve(__dirname,'..');
-  const files=['source/shared/domain.js','source/server/core.js','source/adapters/sheets.js','source/server/gateway.js'];
+  const files=['source/shared/domain.js','source/server/core.js','source/adapters/sheets.js','source/server/gateway.js','source/server/calendar.js'];
   const server=files.map(file=>fs.readFileSync(path.join(root,file),'utf8')
     .replace(/typeof module !== 'undefined' \? require\('[^']+'\) : root\.(\w+)/g,'root.$1')
     .replace(/typeof module!=='undefined'\?require\('[^']+'\):root\.(\w+)/g,'root.$1')
