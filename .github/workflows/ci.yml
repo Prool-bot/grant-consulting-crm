@@ -31,3 +31,5 @@ jobs:
         run: npm test
       - name: Перевірити збірку
         run: npm run build
+      - name: Перевірити готовність приватного Apps Script релізу
+        run: node scripts/verify-cloud-release.js
