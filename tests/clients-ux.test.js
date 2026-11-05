@@ -23,7 +23,7 @@ test('Сортування агрегатів: числові значення, 
 });
 function ui(){const context=vm.createContext({D,Intl,Date,window:{addEventListener(){}},document:{addEventListener(){}},escapeHtml:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')});vm.runInContext(fs.readFileSync('source/web/m2.js','utf8'),context);return context;}
 test('Форматування підсумків: невідоме не нуль, часткові суми позначені',()=>{
- const u=ui();assert.equal(u.summaryMoney({},'requested'),'Не вказано');assert.match(u.summaryMoney({requested:{EUR:0,UAH:12},requested_unknown:1},'requested'),/0 EUR · 12 UAH · Частина сум невідома/);
+ const u=ui();assert.equal(u.summaryMoney({},'requested'),'Не вказано');assert.match(u.summaryMoney({requested:{EUR:0,UAH:12},requested_unknown:1},'requested'),/0,00 EUR · 12,00 UAH · Частина сум невідома/);
 });
 test('Історія: стабільний порядок, Kyiv узимку й улітку, ISO джерела незмінне',()=>{
  const u=ui();assert.match(u.kyivDateTime('2026-01-01T22:30:00Z'),/02.01.2026.*00:30/);assert.match(u.kyivDateTime('2026-07-01T21:30:00Z'),/02.07.2026.*00:30/);
