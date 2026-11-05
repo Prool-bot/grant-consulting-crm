@@ -194,9 +194,11 @@ test('Calendar CRM: форма взаємодії має українські п
  assert.match(form,/Додати робочу дію/);
  assert.match(form,/calendar_date/);
  assert.match(form,/calendar_time/);
+ assert.match(form,/Europe\/Istanbul/);
  assert.match(form,/calendar_reminder/);
- const history=context.historyView([{id:'test',happened_at:'2026-11-05',summary:'Обговорення',type:'Дзвінок',calendar_action:{...todo,title:'<script>alert(1)</script>',state:'active',sync_status:'pending'}}]);
+ const history=context.historyView([{id:'test',happened_at:'2026-11-05',summary:'Обговорення',type:'Дзвінок',calendar_action:{...todo,time_zone:'Europe/Istanbul',title:'<script>alert(1)</script>',state:'active',sync_status:'pending'}}]);
  assert.match(history,/Очікує синхронізації/);
+ assert.match(history,/Стамбул/);
  assert.match(history,/&lt;script>/);
  assert.doesNotMatch(history,/<script>/);
  assert.match(history,/data-calendar-cancel/);
