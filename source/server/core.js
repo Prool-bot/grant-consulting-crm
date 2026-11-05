@@ -2,12 +2,12 @@
 'use strict';
 const D = typeof module !== 'undefined' ? require('../shared/domain') : root.CrmDomain;
 const clone = value => JSON.parse(JSON.stringify(value));
-const statuses = { assessment:'Оцінювання', preparation:'У роботі', review:'Перевірка', submitted:'Подано · рішення очікується', rejected:'Відхилено', won:'Виграно', stopped:'Зупинено' };
+const statuses = { assessment:'Оцінювання', preparation:'У роботі', review:'Перевірка', submitted:'Подано · рішення очікується', rejected:'Відхилено', won:'Отримано', stopped:'Зупинено' };
 const COLLECTIONS=['documents','partners','client_partners'];
 const documentCategories={registration:'Установчі / реєстраційні',financial:'Фінансові',policy:'Політики',application:'Грантова заявка',contract:'Договір',memorandum:'Меморандум',support:'Лист підтримки',report:'Звіт',other:'Інше'};
 const partnerTypes={ngo:'ГО',foundation:'БФ',government:'Державна установа',business:'Бізнес',international:'Міжнародна організація',expert:'Експерт',other:'Інше'};
 const partnerStatuses={potential:'Потенційний',active:'Чинний',paused:'Призупинений',completed:'Завершений'};
-const fields12={documents:['client_id','application_id','client_partner_id','title','category','url','document_date','expiry_at','note'],partners:['name','type','geography','sector','contacts','notes'],client_partners:['client_id','partner_id','role','status','start_date','comments','memorandum','memorandum_date','memorandum_expiry','memorandum_document_id','support_letter','support_date','support_document_id']};
+const fields12={documents:['client_id','application_id','client_partner_id','title','category','url','document_date','expiry_at','note'],partners:['name','type','geography','sector','website','social_links','staff','contacts','notes'],client_partners:['client_id','partner_id','role','status','start_date','comments','memorandum','memorandum_date','memorandum_expiry','memorandum_document_id','support_letter','support_date','support_document_id']};
 function validate12(s) {
   if(s.modelVersion===undefined){if(COLLECTIONS.some(t=>Object.hasOwn(s,t)))throw Error('Некоректна версія каталогів.');return;}
   if(s.modelVersion!==12)throw Error('Невідома версія каталогів.');
@@ -16,7 +16,26 @@ function validate12(s) {
     for(const r of s[table]) {
       if(!r.id || !Number.isInteger(r.version)||r.version<1)throw Error('Некоректна версія каталогу.');
       for(const k of ['document_date','expiry_at','start_date','memorandum_date','memorandum_expiry','support_date'])if(r[k]&&!D.validDate(r[k]))throw Error('Вкажіть коректну дату.');
-      if(table==='partners') {if(!r.name?.trim()||!Object.hasOwn(partnerTypes,r.type))throw Error('Вкажіть назву й тип партнера.');continue;}
+      if(table==='partners') {
+         if(!r.name?.trim()||!Object.hasOwn(partnerTypes,r.type))throw Error('Вкажіть назву й тип партнера.');
+         if(r.website)D.normalizeUrl(r.website);
+         if(r.social_links!==undefined) {
+           if(!Array.isArray(r.social_links)||r.social_links.length>20)throw Error('Некоректні соцмережі партнера.');
+           for(const link of r.social_links) {
+             if(!link||!Object.hasOwn(D.socialPlatforms,link.platform)||typeof link.url!=='string'||(link.label!==undefined&&typeof link.label!=='string'))throw Error('Некоректна соцмережа партнера.');
+             D.normalizeUrl(link.url);
+           }
+         }
+         if(r.staff!==undefined) {
+           if(!Array.isArray(r.staff)||r.staff.length>100)throw Error('Некоректний список співробітників.');
+           for(const person of r.staff) {
+             if(!person||typeof person.full_name!=='string'||!person.full_name.trim()||person.full_name.length>200)throw Error('Вкажіть ім’я співробітника партнера.');
+             for(const key of ['role','email','phone','responsibilities'])if(person[key]!==undefined&&(typeof person[key]!=='string'||person[key].length>2000))throw Error('Некоректні дані співробітника.');
+             if(person.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email))throw Error('Некоректна електронна адреса співробітника.');
+           }
+         }
+         continue;
+       }
       if(!s.clients.some(c=>c.id===r.client_id))throw Error('Порушено зв’язок клієнта.');
       if(table==='documents') {
         if(!r.title?.trim()||!Object.hasOwn(documentCategories,r.category))throw Error('Вкажіть назву й категорію документа.');
@@ -78,7 +97,8 @@ function validateApplication(a) {
   if(!['EUR','UAH','USD','GBP'].includes(a.currency)) throw Error('Оберіть валюту.');
   for(const k of ['amount','award_amount']) if(a[k] != null && (typeof a[k] !== 'number' || !Number.isFinite(a[k]) || a[k]<0)) throw Error('Сума має бути невід’ємним числом.');
   if(a.official_url)D.normalizeUrl(a.official_url);
-  for(const k of ['deadline','submission_at','donor_reply_at']) if(a[k] && !D.validDate(a[k])) throw Error('Вкажіть реальну календарну дату або ISO з часовим поясом.');
+  if(a.project_start_date && a.project_end_date && D.calendarDate(a.project_start_date)>D.calendarDate(a.project_end_date))throw Error('Дата завершення проєкту передує початку.');
+  for(const k of ['deadline','submission_at','donor_reply_at','project_start_date','project_end_date']) if(a[k] && !D.validDate(a[k])) throw Error('Вкажіть реальну календарну дату або ISO з часовим поясом.');
 }
 class CrmService {
   constructor(repository, uuid = D.uuid) { this.repository=repository; this.uuid=uuid; }
@@ -141,7 +161,7 @@ class CrmService {
     return this.repository.transaction(s=>{ if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Оберіть наявного клієнта.');
       const old=id?s.applications.find(a=>a.id===id&&!a.deleted_at):null;
       if(id&&(!old||old.version!==version)) throw Error('Заявку змінено або видалено. Оновіть сторінку.');
-      const allowed=['official_url','client_id','title','grant','donor','deadline','amount','award_amount','currency','status','submission_at','donor_reply_at','notes'];
+      const allowed=['official_url','client_id','title','grant','donor','deadline','amount','award_amount','currency','status','submission_at','donor_reply_at','project_start_date','project_end_date','notes'];
       const fields=Object.fromEntries(allowed.filter(k=>Object.hasOwn(input,k)).map(k=>[k,input[k]]));
       const now=new Date().toISOString();const row={...old,...fields,id:old?.id||this.uuid(),application_no:old?.application_no||`ЛОК-${s.applications.length+1}`,version:(old?.version||0)+1,created_at:old?.created_at||now,updated_at:now};
       if(old) Object.assign(old,row);else s.applications.push(row);return row;
@@ -157,7 +177,7 @@ class CrmService {
     return this.repository.transaction(s=>{
       const row=s.contacts.find(r=>r.id===id&&r.client_id===input.client_id);
       if(!row || (row.version||1)!==version || !s.clients.some(c=>c.id===row.client_id&&!c.deleted_at)) throw Error('Контакт змінено або видалено. Оновіть сторінку.');
-      for(const key of ['full_name','role','email','phone','preferred_channel']) if(Object.hasOwn(input,key)) row[key]=input[key];
+      for(const key of ['full_name','role','email','phone','preferred_channel','responsibilities']) if(Object.hasOwn(input,key)) row[key]=input[key];
       row.version=(row.version||1)+1;row.updated_at=new Date().toISOString();return row;
     });
   }
@@ -168,6 +188,11 @@ class CrmService {
       const old=id?s[table].find(r=>r.id===id&&!r.deleted_at):null;
       if(id&&(!old||old.version!==version))throw Error('Запис змінено або видалено.');
       const fields=Object.fromEntries(fields12[table].filter(k=>Object.hasOwn(input,k)).map(k=>[k,input[k]]));
+       if(table==='partners') {
+         if(fields.website)fields.website=D.normalizeUrl(fields.website);
+         if(fields.social_links)fields.social_links=fields.social_links.map(link=>({platform:link.platform,url:D.normalizeUrl(link.url),label:link.label||''}));
+         if(fields.staff)fields.staff=fields.staff.map(person=>({full_name:person.full_name.trim(),role:person.role||'',email:person.email||'',phone:person.phone||'',responsibilities:person.responsibilities||''}));
+       }
       const row={...old,...fields,id:old?.id||this.uuid(),version:(old?.version||0)+1,created_at:old?.created_at||new Date().toISOString(),updated_at:new Date().toISOString()};
       if(table!=='partners'&&!s.clients.some(c=>c.id===row.client_id&&!c.deleted_at))throw Error('Клієнта видалено.');
       if(old&&table!=='partners'&&old.client_id!==row.client_id)throw Error('Не можна переносити запис до іншого клієнта.');
@@ -197,7 +222,7 @@ class CrmService {
     if(!['contacts','interactions'].includes(table)) throw Error('Невідомий розділ.');
     if(table==='contacts' && (!input.full_name?.trim() || (input.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)))) throw Error('Вкажіть ім’я та коректну електронну адресу або залиште її порожньою.');
     if(table==='interactions' && (!input.summary?.trim()||(input.happened_at&&!D.validDate(input.happened_at)))) throw Error('Вкажіть підсумок та коректну дату.');
-    return this.repository.transaction(s=>{if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Клієнта не знайдено.'); const keys=table==='contacts'?['client_id','full_name','role','email','phone','preferred_channel']:['client_id','type','happened_at','summary','next_step']; const row={...Object.fromEntries(keys.map(k=>[k,input[k]||''])),id:this.uuid(),created_at:new Date().toISOString()};s[table].push(row);return row;});
+    return this.repository.transaction(s=>{if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Клієнта не знайдено.'); const keys=table==='contacts'?['client_id','full_name','role','email','phone','preferred_channel','responsibilities']:['client_id','type','happened_at','summary','next_step']; const row={...Object.fromEntries(keys.map(k=>[k,input[k]||''])),id:this.uuid(),created_at:new Date().toISOString()};s[table].push(row);return row;});
   }
 }
 const api={DATA_TABLES,wireState,changesSince,COLLECTIONS,documentCategories,partnerTypes,partnerStatuses,validate12,LocalRepository,CrmService,statuses,validateApplication};if(typeof module!=='undefined')module.exports=api;else root.CrmCore=api;
