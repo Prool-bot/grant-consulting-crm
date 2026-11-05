@@ -80,6 +80,7 @@ class Service {
  deleteApplication(id,confirmed){return this.mutate('deleteApplication',{id,confirmed});}
  addRelated(table,input){return this.mutate('addRelated',{table,input});}
  updateCalendarAction(id,action,version){return this.mutate('updateCalendarAction',{id,action,version});}
+ async checkCalendar(){return this.call('crmCalendarCheck',{});}
  async syncCalendar(){const result=await this.call('crmCalendarSync',{});await this.reload();return result;}
 }
 const api={Service};if(typeof module!=='undefined')module.exports=api;else root.CrmRemote=api;
