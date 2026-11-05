@@ -1,4 +1,5 @@
-name: CRM 1.4 — підготовка коду робочого Apps Script
+# CRM 1.4 release
+name: CRM 1.4 – підготовка коду робочого Apps Script
 
 # Тільки одноразовий явний push-коміт; НЕ публікує WebApp і НЕ змінює робочу Sheets.
 on:
