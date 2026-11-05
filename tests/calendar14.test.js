@@ -88,14 +88,15 @@ test('Calendar CRM: неправильні дата, час, триваліст�
  }
  assert.equal(repo.read().interactions.length,before);
 });
-test('Calendar CRM: вимога окремого календаря, дозволу і явного RPC',()=>{
+test('Calendar CRM: наявний основний календар, дозвіл та явний RPC',()=>{
  const manifest=JSON.parse(fs.readFileSync('source/server/appsscript.json','utf8'));
  assert.ok(manifest.oauthScopes.includes('https://www.googleapis.com/auth/calendar'));
  const code=fs.readFileSync('source/server/Code.gs','utf8');
  assert.match(code,/function crmCalendarSync\(\)/);
  assert.match(code,/CRM_CALENDAR_ID/);
  assert.match(code,/isOwnedByMe/);
- assert.doesNotMatch(code,/getDefaultCalendar\(\)/);
+ assert.match(code,/getDefaultCalendar\(\)/);
+ assert.match(code,/calendarId\?CalendarApp\.getCalendarById\(calendarId\):CalendarApp\.getDefaultCalendar\(\)/);
  const bundle=fs.readFileSync('scripts/bundle-server.js','utf8');
  assert.match(bundle,/source\/server\/calendar\.js/);
 });
