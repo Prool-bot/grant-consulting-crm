@@ -14,7 +14,7 @@ test('Збірка автономна, сервер V8, маніфест MYSELF;
   assert.doesNotMatch(html, /<script src=|<link rel="stylesheet"/);
   const manifest=JSON.parse(read('dist/apps-script/appsscript.json'));
   assert.deepEqual(manifest.webapp,{access:'MYSELF',executeAs:'USER_ACCESSING'});
-  assert.deepEqual(manifest.oauthScopes,['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/userinfo.email']);
+  assert.deepEqual(manifest.oauthScopes,['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/calendar','https://www.googleapis.com/auth/userinfo.email']);
   assert.doesNotMatch(read('dist/apps-script/Server.gs'),/require\(|module\.exports/);
   const context = { HtmlService: { createHtmlOutput: value => value } };
   vm.createContext(context); vm.runInContext(read('dist/apps-script/Server.gs'), context);vm.runInContext(read('source/server/Code.gs'), context);
