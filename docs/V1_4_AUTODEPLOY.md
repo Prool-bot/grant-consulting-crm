@@ -43,7 +43,7 @@ GitHub → репозиторій CRM → **Settings → Environments → New en
 
 ### Крок 5. Ручний запуск після підтвердженого тестового проєкту
 
-Після об'єднання перевіреної версії з `main`: GitHub → Actions → **CRM 1.4 — Apps Script тестове оновлення** → Run workflow → **STAGING_ONLY**. Система сама запускає тести та завантажує файли у тестовий Apps Script.
+У гілці `codex/crm-1-4-workflow-upgrade` staging запускається лише після push коміту зі зміною цього workflow та повідомленням, що починається з `staging: run CRM 1.4`. GitHub запускає перевірки й завантажує код після звірки погодженого тестового Script ID. Якщо бракує секретів, додайте їх у `crm-staging` і повторіть той самий запуск через **Re-run failed jobs**.
 
 *Це ще не публікація живої CRM і не створення тестових подій в основному Google Calendar.* Для повного e2e необхідні окремі Script Properties із синтетичною Google Sheets, перевірка OAuth Calendar, ручні smoke-тести і лише потім підготовка окремого захищеного production workflow із збереженням чинного webapp deployment ID.
 
