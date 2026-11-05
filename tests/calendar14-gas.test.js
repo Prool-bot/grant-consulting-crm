@@ -6,7 +6,7 @@ const vm=require('node:vm');
 
 function fixture({calendarId=null,owner=true,authorized=true}={}){
  const calls={default:0,byId:0,sync:0,authorize:0,repositories:0};
- const selectedCalendar={isOwnedByMe:()=>owner};
+ const selectedCalendar={isOwnedByMe:()=>owner,isMyPrimaryCalendar:()=>calendarId===null,getTimeZone:()=> 'Europe/Kyiv'};
  const props={getProperty:key=>key==='CRM_CALENDAR_ID'?calendarId:null};
  const root={
   Date,Number,Error,JSON,
@@ -32,7 +32,7 @@ function fixture({calendarId=null,owner=true,authorized=true}={}){
  vm.runInContext(fs.readFileSync('source/server/Code.gs','utf8'),ctx);
  // Код оголошує власний crmRepository_; у тесті підміняємо лише доступ до синтетичного сховища.
  ctx.crmRepository_=()=>{calls.repositories++;return 'synthetic-repository';};
- return {calls,run:()=>vm.runInContext('crmCalendarSync()',ctx)};
+ return {calls,run:()=>vm.runInContext('crmCalendarSync()',ctx),check:()=>vm.runInContext('crmCalendarCheck()',ctx)};
 }
 
 test('Apps Script: наявний основний календар вибирається за замовчуванням без ID',()=>{
@@ -69,4 +69,35 @@ test('Apps Script: відсутня авторизація блокує наві
  assert.equal(calls.default,0);
  assert.equal(calls.byId,0);
  assert.equal(calls.sync,0);
+});
+
+test('Apps Script: read-only preflight перевіряє основний календар без читання Sheets і створення подій',()=>{
+ const {calls,check}=fixture();
+ const result=check();
+ assert.equal(result.ok,true);
+ assert.equal(result.value.ready,true);
+ assert.equal(result.value.primary,true);
+ assert.equal(result.value.timeZone,'Europe/Kyiv');
+ assert.equal(calls.default,1);
+ assert.equal(calls.byId,0);
+ assert.equal(calls.sync,0);
+ assert.equal(calls.repositories,0);
+ assert.equal(calls.authorize,1);
+});
+test('Apps Script: preflight не видає доступ до чужого календаря',()=>{
+ const {calls,check}=fixture({owner:false});
+ const result=check();
+ assert.equal(result.ok,false);
+ assert.equal(result.code,'CALENDAR_NOT_CONFIGURED');
+ assert.equal(calls.sync,0);
+ assert.equal(calls.repositories,0);
+});
+test('Apps Script: без авторизації preflight не читає жодного календаря',()=>{
+ const {calls,check}=fixture({authorized:false});
+ const result=check();
+ assert.equal(result.ok,false);
+ assert.equal(calls.default,0);
+ assert.equal(calls.byId,0);
+ assert.equal(calls.sync,0);
+ assert.equal(calls.repositories,0);
 });
