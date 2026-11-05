@@ -38,6 +38,7 @@ function crmSafe_(action) {
   try { return {ok:true,value:action()}; }
   catch(error) {
     // Не повертаємо сирі помилки Google: вони можуть містити ID та приватні дані.
+    if(error.message==='CALENDAR_NOT_CONFIGURED')return {ok:false,code:'CALENDAR_NOT_CONFIGURED',message:'Робочий календар ще не налаштовано. Потрібна приватна CRM_CALENDAR_ID та дозвіл Calendar.'};
     if(error.message==='CRM12_MIGRATION_REQUIRED')return {ok:false,code:'MIGRATION_REQUIRED',message:'Потрібна ручна міграція CRM 1.2 після приватного резервного копіювання. Зверніться до інструкції випуску; дані не змінено.'};
     var conflict=/Конфлікт|змінено або видалено/.test(error.message||'');
     return {ok:false,code:conflict?'CONFLICT':'UNAVAILABLE',message:conflict?
@@ -50,6 +51,25 @@ function crmQuery(request) {
 }
 function crmMutate(request) {
   return crmSafe_(function() {return CrmGateway.mutate(crmRepository_(request),function(){return Utilities.getUuid();},request);});
+}
+// Синхронізація — лише за явним натисканням власника. Календар визначає Script Property,
+// CRM_CALENDAR_ID. Жодні чужі календарі не редагуємо і не створюємо тут автоматично.
+function crmCalendarLocalTime_(day,time) {
+  if(!CrmDomain.dateOnly(day)||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time))throw Error('CALENDAR_INVALID_TIME');
+  var value=Utilities.parseDate(day+' '+time,'Europe/Kyiv','yyyy-MM-dd HH:mm');
+  if(Utilities.formatDate(value,'Europe/Kyiv','yyyy-MM-dd HH:mm')!==day+' '+time)throw Error('CALENDAR_INVALID_TIME');
+  return value;
+}
+function crmCalendarSync() {
+  return crmSafe_(function() {
+    var props=PropertiesService.getScriptProperties();
+    CrmGateway.authorize(props,Session);
+    var calendarId=props.getProperty('CRM_CALENDAR_ID');
+    if(!calendarId)throw Error('CALENDAR_NOT_CONFIGURED');
+    var calendar=CalendarApp.getCalendarById(calendarId);
+    if(!calendar||!calendar.isOwnedByMe())throw Error('CALENDAR_NOT_CONFIGURED');
+    return CrmCalendar.syncPending(crmRepository_(),calendar,crmCalendarLocalTime_,function(){return new Date();},5);
+  });
 }
 // Запускаються вручну в редакторі власника; суфікс _ закриває виклик з браузера.
 function setupCrm_() { return crmSafe_(function(){return crmRepository_().setup();}); }
