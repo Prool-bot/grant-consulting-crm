@@ -39,7 +39,7 @@ function crmSafe_(action) {
   catch(error) {
     // Не повертаємо сирі помилки Google: вони можуть містити ID та приватні дані.
     if(error.message==='CALENDAR_NOT_CONFIGURED')return {ok:false,code:'CALENDAR_NOT_CONFIGURED',message:'Основний Google Calendar недоступний для цього акаунта. Перевірте дозвіл Calendar та налаштування власника.'};
-    if(error.message==='CALENDAR_INVALID_TIME')return {ok:false,code:'CALENDAR_INVALID_TIME',message:'Цей час за Києвом не існує або неоднозначний через переведення годинника. Виберіть іншу годину.'};
+    if(error.message==='CALENDAR_INVALID_TIME')return {ok:false,code:'CALENDAR_INVALID_TIME',message:'Некоректна дата, час або часовий пояс календарної дії. Перевірте введені дані.'};
     if(error.message==='CRM12_MIGRATION_REQUIRED')return {ok:false,code:'MIGRATION_REQUIRED',message:'Потрібна ручна міграція CRM 1.2 після приватного резервного копіювання. Зверніться до інструкції випуску; дані не змінено.'};
     var conflict=/Конфлікт|змінено або видалено/.test(error.message||'');
     return {ok:false,code:conflict?'CONFLICT':'UNAVAILABLE',message:conflict?
@@ -56,7 +56,7 @@ function crmMutate(request) {
     // Інакше його дія залишиться у pending без можливості виправити час.
     if(request?.action==='addRelated'&&request.args?.table==='interactions'&&request.args.input?.calendar_action) {
       var action=request.args.input.calendar_action;
-      crmCalendarLocalTime_(action.date,action.time);
+      crmCalendarLocalTime_(action.date,action.time,action.time_zone||'Europe/Istanbul');
     }
     return CrmGateway.mutate(crmRepository_(request),function(){return Utilities.getUuid();},request);
   });
@@ -64,15 +64,18 @@ function crmMutate(request) {
 // Синхронізація — лише за явним натисканням власника. Стандарт — його основний
 // Google Calendar; CRM_CALENDAR_ID дає змогу явно вибрати інший власний календар.
 // Жодні чужі календарі не редагуємо і не створюємо тут автоматично.
-function crmCalendarLocalTime_(day,time) {
-  if(!CrmDomain.dateOnly(day)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('CALENDAR_INVALID_TIME');
-  var value=Utilities.parseDate(day+' '+time,'Europe/Kyiv','yyyy-MM-dd HH:mm');
+function crmCalendarLocalTime_(day,time,zone) {
+  // Нові календарні дії мають Europe/Istanbul, але старі без time_zone
+  // продовжують працювати у Europe/Kyiv, як їх було створено раніше.
+  var tz=zone||'Europe/Kyiv';
+  if(!['Europe/Kyiv','Europe/Istanbul'].includes(tz)||!CrmDomain.dateOnly(day)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('CALENDAR_INVALID_TIME');
+  var value=Utilities.parseDate(day+' '+time,tz,'yyyy-MM-dd HH:mm');
   var expected=day+' '+time;
   // Весною локальні години можуть не існувати, восени повторюватись двічі.
   // Для неоднозначної години не обираємо UTC-зсув мовчки: власник має змінити час.
-  if(Utilities.formatDate(value,'Europe/Kyiv','yyyy-MM-dd HH:mm')!==expected||
-     Utilities.formatDate(new Date(value.getTime()-3600000),'Europe/Kyiv','yyyy-MM-dd HH:mm')===expected||
-     Utilities.formatDate(new Date(value.getTime()+3600000),'Europe/Kyiv','yyyy-MM-dd HH:mm')===expected)
+  if(Utilities.formatDate(value,tz,'yyyy-MM-dd HH:mm')!==expected||
+     Utilities.formatDate(new Date(value.getTime()-3600000),tz,'yyyy-MM-dd HH:mm')===expected||
+     Utilities.formatDate(new Date(value.getTime()+3600000),tz,'yyyy-MM-dd HH:mm')===expected)
     throw Error('CALENDAR_INVALID_TIME');
   return value;
 }
@@ -89,7 +92,7 @@ function crmOwnedCalendar_() {
 function crmCalendarCheck() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
-    return {ready:true,primary:calendar.isMyPrimaryCalendar(),timeZone:calendar.getTimeZone()};
+    return {ready:true,primary:calendar.isMyPrimaryCalendar(),timeZone:calendar.getTimeZone(),crmTimeZone:'Europe/Istanbul'};
   });
 }
 // Лише ручна перевірка в редакторі тестового Apps Script: жодних записів.
@@ -102,10 +105,10 @@ function verifyCrmCalendarAccess() {
     console.log('CRM_CALENDAR_CHECK_OK; primary='+String(result.value.primary===true)+
       '; timeZone='+String(result.value.timeZone||''));
     // Доступ підтверджено, але часовий пояс основного календаря може відрізнятися
-    // від Europe/Kyiv, у якому CRM інтерпретує дату й годину нагадувань.
+    // від Europe/Istanbul, у якому CRM інтерпретує нові календарні дії.
     // Не змінюємо налаштування особистого календаря автоматично.
-    if(result.value.timeZone!=='Europe/Kyiv')
-      console.log('CRM_CALENDAR_TIMEZONE_WARNING; crmTimeZone=Europe/Kyiv; calendarTimeZone='+
+    if(result.value.timeZone!=='Europe/Istanbul')
+      console.log('CRM_CALENDAR_TIMEZONE_WARNING; crmTimeZone=Europe/Istanbul; calendarTimeZone='+
         String(result.value.timeZone||'UNKNOWN'));
   } else {
     // Ніколи не журналюємо OAuth-токени, власника або сирі Google-помилки.
