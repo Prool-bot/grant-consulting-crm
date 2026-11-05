@@ -142,11 +142,16 @@ function verifyCrmIstanbulTime() {
 // SHA-256 тестового Spreadsheet ID блокує випадкову перевірку production.
 function verifyCrmTestSheetConnection() {
   var props=PropertiesService.getScriptProperties();
-  if(props.getProperty('CRM_ENVIRONMENT')!=='test') {
-    console.log('CRM_TEST_SHEET_FAILED; code=NOT_TEST_ENVIRONMENT');
-    return;
-  }
   try {
+    // Скрипт CRM 1.4 уже працює в окремому staging-проєкті. Автоматичний clasp
+    // push НЕ встановлює CRM_ENVIRONMENT, тож не покладаємося на ручну зміну
+    // властивостей та не просимо власника змінювати production Script Properties.
+    // Той самий SHA-256 staging Script ID перевіряється у захищеному CI workflow.
+    var expectedScriptHash='57ce0d272f5a4fd0ad8ebf73376f96601ddddb3623f43dd80fe6f2f171be0f7f';
+    if(crmHash_(ScriptApp.getScriptId())!==expectedScriptHash) {
+      console.log('CRM_TEST_SHEET_FAILED; code=TEST_SCRIPT_MISMATCH');
+      return;
+    }
     CrmGateway.authorize(props,Session);
     var id=props.getProperty('CRM_SPREADSHEET_ID');
     var expectedIdHash='4beceb3a77dc0f78da84a4624fa646c3403dcfe0bb90c06a559d1e6074c35656';
