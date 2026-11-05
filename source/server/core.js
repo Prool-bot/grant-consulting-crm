@@ -244,12 +244,12 @@ class CrmService {
     if(table==='interactions' && (!input.summary?.trim()||(input.happened_at&&!D.validDate(input.happened_at)))) throw Error('Вкажіть підсумок та коректну дату.');
     if(table==='interactions' && input.calendar_action!==undefined && input.calendar_action!==null){
       const a=input.calendar_action;
-      if(!a||typeof a!=='object'||!a.title?.trim()||a.title.length>200||!D.dateOnly(a.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(a.time)||![15,30,45,60,90,120,180,240,480].includes(a.duration_minutes)||![0,5,10,15,30,60,1440].includes(a.reminder_minutes))throw Error('Заповніть назву, дату, час та коректне нагадування.');
+      if(!a||typeof a!=='object'||!a.title?.trim()||a.title.length>200||!D.dateOnly(a.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(a.time)||!(a.time_zone==null||['Europe/Istanbul','Europe/Kyiv'].includes(a.time_zone))||![15,30,45,60,90,120,180,240,480].includes(a.duration_minutes)||![0,5,10,15,30,60,1440].includes(a.reminder_minutes))throw Error('Заповніть назву, дату, час та коректне нагадування.');
     }
     return this.repository.transaction(s=>{if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Клієнта не знайдено.'); const keys=table==='contacts'?['client_id','full_name','role','email','phone','preferred_channel','responsibilities']:['client_id','type','happened_at','summary','next_step'];
       const row={...Object.fromEntries(keys.map(k=>[k,input[k]||''])),id:this.uuid(),created_at:new Date().toISOString()};
       if(table==='interactions'&&input.calendar_action){
-        row.calendar_action={title:input.calendar_action.title.trim(),date:input.calendar_action.date,time:input.calendar_action.time,duration_minutes:input.calendar_action.duration_minutes,reminder_minutes:input.calendar_action.reminder_minutes,state:'active',sync_status:'pending',event_id:'',sync_started_at:null,synced_at:null,error_code:''};
+        row.calendar_action={title:input.calendar_action.title.trim(),date:input.calendar_action.date,time:input.calendar_action.time,time_zone:input.calendar_action.time_zone||'Europe/Istanbul',duration_minutes:input.calendar_action.duration_minutes,reminder_minutes:input.calendar_action.reminder_minutes,state:'active',sync_status:'pending',event_id:'',sync_started_at:null,synced_at:null,error_code:''};
       }s[table].push(row);return row;});
   }
 }
