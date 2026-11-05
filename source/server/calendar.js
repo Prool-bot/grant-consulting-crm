@@ -33,6 +33,11 @@ function syncPending(repository,calendar,localTime,now=()=>new Date(),limit=5) {
   const task=claimed.calendar_action,token=MARK+claimed.id;
   try {
    let event=task.event_id?calendar.getEventById(task.event_id):null;
+   // Ніколи не редагувати чи видаляти події, які не належать CRM:
+   // event_id може бути помилковим або зміненим у таблиці.
+   if(event && (typeof event.getDescription!=='function'||!event.getDescription().includes(token))) {
+     throw Error('CALENDAR_EVENT_ID_MISMATCH');
+   }
    const start=localTime(task.date,task.time);
    if(!(start instanceof Date)||!Number.isFinite(start.getTime()))throw Error('CALENDAR_INVALID_TIME');
    const end=new Date(start.getTime()+task.duration_minutes*60000);
