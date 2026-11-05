@@ -58,7 +58,13 @@ function crmMutate(request) {
 function crmCalendarLocalTime_(day,time) {
   if(!CrmDomain.dateOnly(day)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('CALENDAR_INVALID_TIME');
   var value=Utilities.parseDate(day+' '+time,'Europe/Kyiv','yyyy-MM-dd HH:mm');
-  if(Utilities.formatDate(value,'Europe/Kyiv','yyyy-MM-dd HH:mm')!==day+' '+time)throw Error('CALENDAR_INVALID_TIME');
+  var expected=day+' '+time;
+  // Весною локальні години можуть не існувати, восени повторюватись двічі.
+  // Для неоднозначної години не обираємо UTC-зсув мовчки: власник має змінити час.
+  if(Utilities.formatDate(value,'Europe/Kyiv','yyyy-MM-dd HH:mm')!==expected||
+     Utilities.formatDate(new Date(value.getTime()-3600000),'Europe/Kyiv','yyyy-MM-dd HH:mm')===expected||
+     Utilities.formatDate(new Date(value.getTime()+3600000),'Europe/Kyiv','yyyy-MM-dd HH:mm')===expected)
+    throw Error('CALENDAR_INVALID_TIME');
   return value;
 }
 // Спільна перевірка календаря без зміни його подій.
