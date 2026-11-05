@@ -187,7 +187,7 @@ function application(id,clientId,editing=false) {
  const a=crm.data().applications.find(a=>a.id===id);if(id&&id!=='new'&&!a){main.innerHTML=heading('Заявку не знайдено','Оберіть заявку в реєстрі.');return;}
  if(a&&!editing){
   const client=data.clients.find(c=>c.id===a.client_id);
-  const fields=[['Номер заявки',a.application_no],['Назва',a.title],['Клієнт',client?.legal_name],['Грант',a.grant],['Донор',a.donor],['Дата подання',applicationDate(a.submission_at)],['Дедлайн',applicationDate(a.deadline)],['Початок проєкту',a.project_start_date?applicationDate(a.project_start_date):null],['Завершення проєкту',a.project_end_date?applicationDate(a.project_end_date):null],['Календарних місяців',projectMonths(a)],['Запитувана сума',applicationAmount(a.amount,a.currency)],['Присуджена сума',applicationAmount(a.award_amount,a.currency)],['Статус',CrmCore.statuses[a.status]],['Архів',a.archived_at?'Так':'Ні'],['Дата відповіді',applicationDate(a.donor_reply_at)],['Примітки / результат',a.notes]];
+  const fields=[['Номер заявки',a.application_no],['Назва',a.title],['Клієнт',client?.legal_name],['Грант',a.grant],['Донор',a.donor],['Дата подання',applicationDate(a.submission_at)],['Дедлайн',applicationDate(a.deadline)],['Початок проєкту',a.project_start_date?applicationDate(a.project_start_date):null],['Завершення проєкту',a.project_end_date?applicationDate(a.project_end_date):null],['Календарних місяців',projectMonths(a)],['Запитувана сума',a.amount==null?null:applicationAmount(a.amount,a.currency)],['Присуджена сума',a.award_amount==null?null:applicationAmount(a.award_amount,a.currency)],['Статус',CrmCore.statuses[a.status]],['Архів',a.archived_at?'Так':'Ні'],['Дата відповіді',applicationDate(a.donor_reply_at)],['Примітки / результат',a.notes]];
   main.innerHTML=heading('Перегляд заявки','Дати: Europe/Kyiv. Суми в початковій валюті.')+'<section class="panel"><div class="actions"><button id="edit-application" class="button">Редагувати</button><button id="print-application" class="button secondary">Друк / PDF</button><a href="#profile/'+encodeURIComponent(a.client_id)+'">До клієнта</a><a href="#home">До реєстру</a></div><dl class="profile-details">'+fields.map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+escapeHtml(value??'Не вказано')+'</dd></div>').join('')+'</dl><p>Офіційне посилання на грантовий конкурс: '+safeLink(a.official_url,a.official_url||'Не вказано')+'</p></section>';
   main.querySelector('#edit-application').onclick=()=>application(id,clientId,true);main.querySelector('#print-application').onclick=()=>printCrmCard('Картка грантової заявки',a.title,fields.concat([['Офіційне посилання',a.official_url]]));return;
  }
@@ -287,9 +287,23 @@ function showPartner(id) {
  const social=(p.social_links||[]).map(x=>'<li>'+safeLink(x.url,D.socialPlatforms[x.platform]||x.platform)+'</li>').join('');
  const staff=(p.staff||[]).map(x=>'<article class="contact-card"><h3>'+escapeHtml(x.full_name)+'</h3><dl>'+[['Посада',x.role],['Пошта',x.email],['Телефон',x.phone],['Чим займається',x.responsibilities]].filter(([,v])=>v).map(([k,v])=>'<div><dt>'+escapeHtml(k)+'</dt><dd>'+escapeHtml(v)+'</dd></div>').join('')+'</dl></article>').join('');
  main.innerHTML=heading(escapeHtml(p.name),'Картка партнера','<a href="#clients">До клієнтів</a>')+
- '<div class="actions"><button id="print-partner" class="button secondary">Друк / PDF</button></div><section class="panel"><dl class="profile-details">'+fields.filter(([,v])=>v).map(([k,v])=>'<div><dt>'+escapeHtml(k)+'</dt><dd>'+(k==='Вебсайт'?safeLink(v,v):escapeHtml(v))+'</dd></div>').join('')+'</dl>'+
+ '<div class="actions"><button id="print-partner" class="button secondary">Друк / PDF</button><button id="convert-partner" class="button secondary">Створити клієнта з партнера</button></div><p id="partner-conversion-error" class="error" role="alert"></p><section class="panel"><dl class="profile-details">'+fields.filter(([,v])=>v).map(([k,v])=>'<div><dt>'+escapeHtml(k)+'</dt><dd>'+(k==='Вебсайт'?safeLink(v,v):escapeHtml(v))+'</dd></div>').join('')+'</dl>'+
  (social?'<h2>Соціальні мережі</h2><ul>'+social+'</ul>':'')+
  (staff?'<h2>Співробітники</h2><div class="contact-cards">'+staff+'</div>':'')+
  '<h2>Пов’язані клієнти</h2><div class="contact-cards">'+linked.map(link=>{const c=state.clients.find(x=>x.id===link.client_id);return c?'<article class="contact-card"><a href="#profile/'+encodeURIComponent(c.id)+'/partners">'+escapeHtml(c.legal_name)+'</a><p>'+escapeHtml(link.role||'')+'</p></article>':'';}).join('')+'</div></section>';
+
+ const convert=main.querySelector('#convert-partner');
+ convert.onclick=async()=>{
+   if(crm.data().clients.some(c=>c.legal_name.trim().toLocaleLowerCase('uk')===p.name.trim().toLocaleLowerCase('uk'))) {
+     main.querySelector('#partner-conversion-error').textContent='Клієнт із такою назвою вже існує. Перейдіть у каталог клієнтів, щоб уникнути дубліката.';return;
+   }
+   if(!window.confirm('Створити нового клієнта з даних партнера? Партнер залишиться у довіднику без змін.'))return;
+   convert.disabled=true;
+   try{
+     const type={ngo:'ngo',foundation:'foundation',government:'state_institution',business:'company'}[p.type]||'ngo';
+     const saved=await localWrite(()=>crm.saveClient({legal_name:p.name,type,status:'potential',website:p.website||'',social_links:p.social_links||[],location:p.geography||'',sectors:p.sector?[p.sector]:[],description:p.notes||''}));
+     refreshData();location.hash='profile/'+encodeURIComponent(saved.id);
+   }catch(error){main.querySelector('#partner-conversion-error').textContent=error.message;convert.disabled=false;}
+ };
  main.querySelector('#print-partner').onclick=()=>printCrmCard('Картка партнера',p.name,fields.concat([['Соцмережі',(p.social_links||[]).map(x=>x.url).join('; ')],['Співробітники',(p.staff||[]).map(x=>[x.full_name,x.role,x.email,x.phone,x.responsibilities].filter(Boolean).join(' — ')).join('; ')],['Пов’язані клієнти',linked.map(link=>state.clients.find(x=>x.id===link.client_id)?.legal_name).filter(Boolean).join('; ')]]));
 }
