@@ -18,7 +18,8 @@ concurrency:
 jobs:
   staging:
     name: Перевірка та оновлення ТІЛЬКИ тестового Apps Script
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/crm-1-4-workflow-upgrade' && startsWith(github.event.head_commit.message, 'staging: run CRM 1.4') }}
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/crm-1-4-workflow-upgrade' && startsWith(github.event.head_commit.message, 'staging: run CRM 1.4') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: crm-staging
