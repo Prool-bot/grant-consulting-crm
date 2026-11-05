@@ -314,6 +314,118 @@ function verifyCrmIsolatedSyntheticCrud() {
     console.log('CRM_SYNTHETIC_CRUD_FAILED; code=UNAVAILABLE');
   }
 }
+// ОДИН дозволений власником live smoke test CRM → Google Calendar:
+// 06.11.2026 11:00–11:15 Europe/Istanbul, popup за 5 хвилин.
+// Виконується вручну тільки у погодженому окремому staging Apps Script.
+// Синтетичну CRM створюємо у НОВІЙ Sheets; CRM_1_4_TEST_DB не змінюємо.
+// Захист від випадкових повторів: одноразовий claim у staging Script Properties
+// ДО будь-якого створення файлу/події. Після збою повторний Run не створить дубль.
+function verifyCrmIsolatedCalendarSync() {
+  var props=PropertiesService.getScriptProperties();
+  var claimKey='CRM14_E2E_CALENDAR_20261106_1100_ISTANBUL';
+  var claimed=false;
+  try {
+    var expectedScriptHash='57ce0d272f5a4fd0ad8ebf73376f96601ddddb3623f43dd80fe6f2f171be0f7f';
+    if(crmHash_(ScriptApp.getScriptId())!==expectedScriptHash) {
+      console.log('CRM_E2E_CALENDAR_FAILED; code=TEST_SCRIPT_MISMATCH');
+      return;
+    }
+    CrmGateway.authorize(props,Session);
+    var configuredId=props.getProperty('CRM_SPREADSHEET_ID');
+    var expectedIdHash='4beceb3a77dc0f78da84a4624fa646c3403dcfe0bb90c06a559d1e6074c35656';
+    if(!configuredId||crmHash_(configuredId)!==expectedIdHash) {
+      console.log('CRM_E2E_CALENDAR_FAILED; code=TEST_SHEET_MISMATCH');
+      return;
+    }
+    // Календар тільки основний і власний; не використовувати CRM_CALENDAR_ID
+    // для цього одноразового приймання, навіть якщо такий property встановлено.
+    var calendar=CalendarApp.getDefaultCalendar();
+    if(!calendar||!calendar.isOwnedByMe()||!calendar.isMyPrimaryCalendar()) {
+      console.log('CRM_E2E_CALENDAR_FAILED; code=PRIMARY_CALENDAR_REQUIRED');
+      return;
+    }
+    var start=crmCalendarLocalTime_('2026-11-06','11:00','Europe/Istanbul');
+    if(start.toISOString()!=='2026-11-06T08:00:00.000Z') {
+      console.log('CRM_E2E_CALENDAR_FAILED; code=TIMEZONE_MISMATCH');
+      return;
+    }
+    // Гарантуємо лише один новий захід, незалежно від повторних натискань Run.
+    // ScriptLock утримується ЛИШЕ під час claim, не під час Sheets/Calendar API.
+    var guard=LockService.getScriptLock();
+    if(!guard.tryLock(10000)) {
+      console.log('CRM_E2E_CALENDAR_FAILED; code=BUSY');
+      return;
+    }
+    try {
+      if(props.getProperty(claimKey)) {
+        console.log('CRM_E2E_CALENDAR_ALREADY_CLAIMED; noNewEvents=1');
+        return;
+      }
+      props.setProperty(claimKey,'CLAIMED');
+      claimed=true;
+    }finally {guard.releaseLock();}
+
+    var scratch=SpreadsheetApp.create('CRM_1_4_E2E_CALENDAR_'+Utilities.getUuid().slice(0,8));
+    // ID для приватного read-only аудиту після збою (не виводити у logs).
+    props.setProperty(claimKey+'_SHEET_ID',scratch.getId());
+    var repository=new CrmSheets.SheetsRepository({
+      spreadsheet:scratch,lock:LockService.getScriptLock(),
+      flush:function(){SpreadsheetApp.flush();},hash:crmHash_
+    });
+    repository.setup();
+    repository.migrate12(0,true);
+    var service=new CrmCore.CrmService(repository,function(){return Utilities.getUuid();});
+    var client=service.saveClient({
+      legal_name:'CRM 1.4 СИНТЕТИЧНА ТЕСТОВА ОРГАНІЗАЦІЯ',
+      type:'ngo',status:'active'
+    });
+    var interaction=service.addRelated('interactions',{
+      client_id:client.id,summary:'Синтетичне тестування Calendar CRM 1.4',
+      calendar_action:{
+        title:'CRM 1.4 — тест нагадування',
+        date:'2026-11-06',time:'11:00',time_zone:'Europe/Istanbul',
+        duration_minutes:15,reminder_minutes:5
+      }
+    });
+    var before=repository.read();
+    if(before.interactions.length!==1||
+       before.interactions[0].id!==interaction.id||
+       before.interactions[0].calendar_action.sync_status!=='pending')
+      throw Error('CRM_E2E_PRECONDITION_FAILED');
+
+    // Цей виклик застосовує САМЕ продуктивний модуль CRM календарної синхронізації,
+    // однак лише до однієї нової синтетичної бази. Ніяких інших pending подій.
+    var result=CrmCalendar.syncPending(repository,calendar,crmCalendarLocalTime_,function(){return new Date();},1);
+    if(result.synced!==1||result.failed!==0||result.pending!==0)
+      throw Error('CRM_E2E_SYNC_FAILED');
+    var state=repository.read();
+    var task=state.interactions[0].calendar_action;
+    if(task.sync_status!=='synced'||!task.event_id||task.time_zone!=='Europe/Istanbul')
+      throw Error('CRM_E2E_STATE_FAILED');
+    var event=calendar.getEventById(task.event_id);
+    if(!event||
+       event.getStartTime().toISOString()!=='2026-11-06T08:00:00.000Z'||
+       event.getEndTime().toISOString()!=='2026-11-06T08:15:00.000Z'||
+       event.getDescription().split(/\r?\n/).indexOf('CRM-ACTION:'+interaction.id)<0||
+       event.getPopupReminders().indexOf(5)<0)
+      throw Error('CRM_E2E_EVENT_FAILED');
+    if(typeof event.getVisibility==='function'&&
+       event.getVisibility()!==CalendarApp.Visibility.PRIVATE)
+      throw Error('CRM_E2E_VISIBILITY_FAILED');
+    // Перевірка ідемпотентності: повторний sync не створює нових подій.
+    var retry=CrmCalendar.syncPending(repository,calendar,crmCalendarLocalTime_,function(){return new Date();},1);
+    if(retry.synced!==0||retry.failed!==0)throw Error('CRM_E2E_RETRY_FAILED');
+    props.setProperty(claimKey,'DONE');
+    console.log('CRM_E2E_CALENDAR_OK; date=2026-11-06; time=11:00-11:15; zone=Europe/Istanbul; reminder=5; synced=1; repeatSynced=0; originalTestSheetWrites=0');
+  }catch(error) {
+    // Залишити claim, навіть якщо API не відповів після створення події.
+    // Повторний Run блокується, щоб не створити друге особисте нагадування.
+    if(claimed) {
+      try {props.setProperty(claimKey,'CHECK_MANUALLY');}catch(ignored){}
+    }
+    console.log('CRM_E2E_CALENDAR_FAILED; code=CHECK_MANUALLY; noAutomaticRetry=1');
+  }
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
