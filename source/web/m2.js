@@ -184,8 +184,10 @@ function showProfile(id,initialTab='Огляд') {
       if(contact)await crm.saveContact({...input,client_id:id},contact.id,contact.version||1);
       else await crm.addRelated(table,{...input,client_id:id});
       refreshData();
-      if(input.calendar_action&&crm.syncCalendar)try{await crm.syncCalendar();refreshData();}catch{}
+      let calendarError='';
+      if(input.calendar_action&&crm.syncCalendar)try{await crm.syncCalendar();refreshData();}catch(error){calendarError=error.message;}
       showProfile(id,tab);
+      if(calendarError){const notice=main.querySelector('#calendar-result');if(notice)notice.textContent='Дію збережено в CRM, але календар не синхронізовано: '+calendarError;}
      });
   }
  };
