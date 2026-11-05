@@ -61,16 +61,25 @@ function crmCalendarLocalTime_(day,time) {
   if(Utilities.formatDate(value,'Europe/Kyiv','yyyy-MM-dd HH:mm')!==day+' '+time)throw Error('CALENDAR_INVALID_TIME');
   return value;
 }
+// Спільна перевірка календаря без зміни його подій.
+function crmOwnedCalendar_() {
+  var props=PropertiesService.getScriptProperties();
+  CrmGateway.authorize(props,Session);
+  var calendarId=props.getProperty('CRM_CALENDAR_ID');
+  var calendar=calendarId?CalendarApp.getCalendarById(calendarId):CalendarApp.getDefaultCalendar();
+  if(!calendar||!calendar.isOwnedByMe())throw Error('CALENDAR_NOT_CONFIGURED');
+  return calendar;
+}
+// Безпечна перевірка OAuth і прав: без записів у Google Sheets та Google Calendar.
+function crmCalendarCheck() {
+  return crmSafe_(function() {
+    var calendar=crmOwnedCalendar_();
+    return {ready:true,primary:calendar.isMyPrimaryCalendar(),timeZone:calendar.getTimeZone()};
+  });
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
-    var props=PropertiesService.getScriptProperties();
-    CrmGateway.authorize(props,Session);
-    // За замовчуванням використовуємо лише основний календар власника.
-    // Якщо власник явно задав CRM_CALENDAR_ID, використовуємо лише цей календар.
-    var calendarId=props.getProperty('CRM_CALENDAR_ID');
-    var calendar=calendarId?CalendarApp.getCalendarById(calendarId):CalendarApp.getDefaultCalendar();
-    if(!calendar||!calendar.isOwnedByMe())throw Error('CALENDAR_NOT_CONFIGURED');
-    return CrmCalendar.syncPending(crmRepository_(),calendar,crmCalendarLocalTime_,function(){return new Date();},5);
+    return CrmCalendar.syncPending(crmRepository_(),crmOwnedCalendar_(),crmCalendarLocalTime_,function(){return new Date();},5);
   });
 }
 // Запускаються вручну в редакторі власника; суфікс _ закриває виклик з браузера.
