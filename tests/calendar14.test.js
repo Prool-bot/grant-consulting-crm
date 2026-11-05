@@ -71,6 +71,43 @@ test('Calendar CRM: скасування збереженої події і за
  assert.equal(repo.read().interactions[0].calendar_action.state,'cancelled');
  assert.equal(syncPending(repo,calendar,localTime).synced,0);
 });
+test('Calendar CRM: помилковий event_id не змінює і не видаляє особисту подію',()=>{
+ for(const action of ['retry','cancel']){
+  const {repo,calendar,service,interaction}=fixture();
+  const personal=calendar.createEvent('Особиста зустріч',localTime(todo.date,todo.time),localTime(todo.date,'11:00'),{description:'Це не подія CRM'});
+  const original={title:personal.title,description:personal.description,start:personal.start.getTime(),end:personal.end.getTime()};
+  repo.transaction(state=>{
+   const row=state.interactions[0];
+   row.calendar_action.event_id=personal.id;
+   row.calendar_action.sync_status='error';
+  });
+  if(action==='cancel'){
+   const row=repo.read().interactions[0];
+   service.updateCalendarAction(interaction.id,'cancel',row.version);
+  }
+  const result=syncPending(repo,calendar,localTime);
+  assert.equal(result.failed,1);
+  assert.equal(result.synced,0);
+  assert.equal(calendar.created,1);
+  assert.equal(calendar.events.size,1);
+  assert.equal(personal.deleted,false);
+  assert.equal(personal.title,original.title);
+  assert.equal(personal.description,original.description);
+  assert.equal(personal.start.getTime(),original.start);
+  assert.equal(personal.end.getTime(),original.end);
+  assert.equal(repo.read().interactions[0].calendar_action.sync_status,'error');
+ }
+});
+test('Calendar CRM: скасування до створення не впливає на особисті події',()=>{
+ const {repo,calendar,service,interaction}=fixture();
+ const personal=calendar.createEvent('Особисте',localTime(todo.date,todo.time),localTime(todo.date,'11:00'),{description:'Приватне'});
+ const row=repo.read().interactions[0];
+ service.updateCalendarAction(interaction.id,'cancel',row.version);
+ const result=syncPending(repo,calendar,localTime);
+ assert.equal(result.synced,1);assert.equal(result.failed,0);
+ assert.equal(calendar.created,1);assert.equal(calendar.events.size,1);
+ assert.equal(personal.deleted,false);
+});
 test('Calendar CRM: помилка Google не втрачає дію; повтор із тим самим ID',()=>{
  const {repo,calendar,interaction,service}=fixture();
  calendar.createEvent=()=>{throw Error('Synthetic Calendar outage');};
