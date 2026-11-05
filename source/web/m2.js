@@ -150,10 +150,19 @@ function showProfile(id,initialTab='Огляд') {
    const related=crm.data()[table].filter(r=>r.client_id===id);
    content.innerHTML='<h2>'+tab+'</h2>'+(contacts?contactsView(related):historyView(related));
    if(!editing){
-     content.innerHTML+='<button id="add-related" class="button secondary">'+(contacts?'Додати контакт':'Додати взаємодію')+'</button>'+(!contacts&&globalThis.CRM_REMOTE?'<button id="calendar-sync" class="button secondary">Синхронізувати календар</button><p id="calendar-result" role="status"></p>':'');
+     content.innerHTML+='<button id="add-related" class="button secondary">'+(contacts?'Додати контакт':'Додати взаємодію')+'</button>'+(!contacts&&globalThis.CRM_REMOTE?'<button id="calendar-check" class="button secondary">Перевірити доступ до календаря</button> <button id="calendar-sync" class="button secondary">Синхронізувати календар</button><p id="calendar-result" role="status"></p>':'');
      content.querySelector('#add-related').onclick=()=>show(tab,true);
      content.querySelectorAll('[data-edit-contact]').forEach(b=>b.onclick=()=>show(tab,true,related.find(r=>r.id===b.dataset.editContact)));
      if(!contacts){
+       content.querySelector('#calendar-check')?.addEventListener('click',async e=>{
+         const button=e.target,status=content.querySelector('#calendar-result');
+         button.disabled=true;
+         try{
+           const result=await crm.checkCalendar();
+           status.textContent=result.ready?(result.primary?'Основний Google Calendar доступний.':'Обраний Google Calendar доступний.')+' Часовий пояс: '+result.timeZone+'. Події не створювалися.':'Доступ до календаря не підтверджено.';
+         }catch(error){status.textContent=error.message;}
+         finally{button.disabled=false;}
+       });
        content.querySelector('#calendar-sync')?.addEventListener('click',async e=>{
          e.target.disabled=true;
          try {const result=await crm.syncCalendar();refreshData();showProfile(id,tab);const status=main.querySelector('#calendar-result');if(status)status.textContent='Синхронізовано: '+result.synced+'; помилок: '+result.failed;}
