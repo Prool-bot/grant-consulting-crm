@@ -93,9 +93,10 @@ function crmCalendarCheck() {
   });
 }
 // Лише ручна перевірка в редакторі тестового Apps Script: жодних записів.
- // Виводимо мінімальний результат, бо Apps Script не показує повернене значення
- // crmCalendarCheck() у стандартному журналі виконання.
-function verifyCrmCalendarAccess_() {
+// Окрема публічна read-only функція без кінцевого _ для меню Run в Apps Script.
+// Виводимо мінімальний результат, бо Apps Script не показує повернене значення
+// crmCalendarCheck() у стандартному журналі виконання.
+function verifyCrmCalendarAccess() {
   var result=crmCalendarCheck();
   if(result.ok===true&&result.value&&result.value.ready===true) {
     console.log('CRM_CALENDAR_CHECK_OK; primary='+String(result.value.primary===true)+
