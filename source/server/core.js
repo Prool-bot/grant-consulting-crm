@@ -218,11 +218,33 @@ class CrmService {
       row.deleted_at=new Date().toISOString();row.updated_at=row.deleted_at;row.version++;return row;
     });
   }
+  updateCalendarAction(id,action,version) {
+    if(!['cancel','retry'].includes(action))throw Error('Невідома дія календаря.');
+    return this.repository.transaction(s=>{
+      const row=s.interactions.find(r=>r.id===id&&s.clients.some(c=>c.id===r.client_id&&!c.deleted_at));
+      if(!row||!row.calendar_action)throw Error('Календарну дію не знайдено.');
+      if((row.version||1)!==version)throw Error('Дію змінено або видалено.');
+      if(row.calendar_action.sync_status==='syncing')throw Error('Синхронізація триває.');
+      if(action==='cancel')row.calendar_action={...row.calendar_action,state:'cancelled',sync_status:'pending'};
+      else if(row.calendar_action.sync_status==='error')row.calendar_action={...row.calendar_action,sync_status:'pending'};
+      else throw Error('Повторна синхронізація не потрібна.');
+      row.version=(row.version||1)+1;row.updated_at=new Date().toISOString();
+      return row;
+    });
+  }
   addRelated(table,input) {
     if(!['contacts','interactions'].includes(table)) throw Error('Невідомий розділ.');
     if(table==='contacts' && (!input.full_name?.trim() || (input.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)))) throw Error('Вкажіть ім’я та коректну електронну адресу або залиште її порожньою.');
     if(table==='interactions' && (!input.summary?.trim()||(input.happened_at&&!D.validDate(input.happened_at)))) throw Error('Вкажіть підсумок та коректну дату.');
-    return this.repository.transaction(s=>{if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Клієнта не знайдено.'); const keys=table==='contacts'?['client_id','full_name','role','email','phone','preferred_channel','responsibilities']:['client_id','type','happened_at','summary','next_step']; const row={...Object.fromEntries(keys.map(k=>[k,input[k]||''])),id:this.uuid(),created_at:new Date().toISOString()};s[table].push(row);return row;});
+    if(table==='interactions' && input.calendar_action!==undefined && input.calendar_action!==null){
+      const a=input.calendar_action;
+      if(!a||typeof a!=='object'||!a.title?.trim()||a.title.length>200||!D.dateOnly(a.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(a.time)||![15,30,45,60,90,120,180,240,480].includes(a.duration_minutes)||![0,5,10,15,30,60,1440].includes(a.reminder_minutes))throw Error('Заповніть назву, дату, час та коректне нагадування.');
+    }
+    return this.repository.transaction(s=>{if(!s.clients.some(c=>c.id===input.client_id&&!c.deleted_at)) throw Error('Клієнта не знайдено.'); const keys=table==='contacts'?['client_id','full_name','role','email','phone','preferred_channel','responsibilities']:['client_id','type','happened_at','summary','next_step'];
+      const row={...Object.fromEntries(keys.map(k=>[k,input[k]||''])),id:this.uuid(),created_at:new Date().toISOString()};
+      if(table==='interactions'&&input.calendar_action){
+        row.calendar_action={title:input.calendar_action.title.trim(),date:input.calendar_action.date,time:input.calendar_action.time,duration_minutes:input.calendar_action.duration_minutes,reminder_minutes:input.calendar_action.reminder_minutes,state:'active',sync_status:'pending',event_id:'',sync_started_at:null,synced_at:null,error_code:''};
+      }s[table].push(row);return row;});
   }
 }
 const api={DATA_TABLES,wireState,changesSince,COLLECTIONS,documentCategories,partnerTypes,partnerStatuses,validate12,LocalRepository,CrmService,statuses,validateApplication};if(typeof module!=='undefined')module.exports=api;else root.CrmCore=api;
