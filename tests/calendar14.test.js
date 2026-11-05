@@ -6,7 +6,7 @@ const {CrmService,LocalRepository}=require('../source/server/core');
 const {syncPending}=require('../source/server/calendar');
 const stubClient={legal_name:'ГО «Тестовий клієнт»',type:'ngo',status:'active'};
 const todo={title:'Подати уточнення',date:'2026-11-12',time:'10:30',duration_minutes:30,reminder_minutes:15};
-const localTime=(date,time)=>new Date(date+'T'+time+':00+02:00');
+const localTime=(date,time,zone='Europe/Istanbul')=>new Date(date+'T'+time+':00'+(zone==='Europe/Istanbul'?'+03:00':'+02:00'));
 class FakeEvent {
  constructor(title,start,end,options,calendar){
   this.id='test-event-'+(++calendar.serial);
@@ -49,6 +49,24 @@ test('Calendar CRM: створення, нагадування, статус і 
  assert.equal(row.calendar_action.event_id,e.id);assert.equal(row.calendar_action.sync_status,'synced');
  result=syncPending(repo,calendar,localTime);
  assert.equal(result.synced,0);assert.equal(calendar.created,1);
+});
+test('Calendar CRM: нові дії привʼязані до Стамбула, старі без поля лишаються київськими',()=>{
+ const current=fixture(),currentZones=[];
+ assert.equal(current.repo.read().interactions[0].calendar_action.time_zone,'Europe/Istanbul');
+ const curr=syncPending(current.repo,current.calendar,(day,time,zone)=>{
+  currentZones.push(zone);return localTime(day,time,zone);
+ });
+ assert.equal(curr.synced,1);
+ assert.deepEqual(currentZones,['Europe/Istanbul']);
+ assert.equal([...current.calendar.events.values()][0].start.toISOString(),'2026-11-12T07:30:00.000Z');
+ const legacy=fixture(),legacyZones=[];
+ legacy.repo.transaction(state=>{delete state.interactions[0].calendar_action.time_zone;});
+ const old=syncPending(legacy.repo,legacy.calendar,(day,time,zone)=>{
+  legacyZones.push(zone);return localTime(day,time,zone);
+ });
+ assert.equal(old.synced,1);
+ assert.deepEqual(legacyZones,['Europe/Kyiv']);
+ assert.equal([...legacy.calendar.events.values()][0].start.toISOString(),'2026-11-12T08:30:00.000Z');
 });
 test('Calendar CRM: відновлення після втраченої квитанції без створення дубля',()=>{
  const {repo,calendar}=fixture();
