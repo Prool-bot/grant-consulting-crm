@@ -426,6 +426,108 @@ function verifyCrmIsolatedCalendarSync() {
     console.log('CRM_E2E_CALENDAR_FAILED; code=CHECK_MANUALLY; noAutomaticRetry=1');
   }
 }
+// Одноразова перевірка резервної копії/відновлення ЛИШЕ на двох нових
+// синтетичних приватних Google Sheets у окремому Apps Script staging.
+// Ні наявну CRM_1_4_TEST_DB, ні production CRM 1.3 НЕ відкриваємо / не змінюємо.
+// Успіх не означає, що створено справжню production резервну копію.
+function verifyCrmIsolatedBackupRestore() {
+  var props=PropertiesService.getScriptProperties();
+  var claimKey='CRM14_BACKUP_RESTORE_SYNTHETIC_20261105';
+  var claimed=false;
+  try {
+    var expectedScriptHash='57ce0d272f5a4fd0ad8ebf73376f96601ddddb3623f43dd80fe6f2f171be0f7f';
+    if(crmHash_(ScriptApp.getScriptId())!==expectedScriptHash) {
+      console.log('CRM_BACKUP_RESTORE_FAILED; code=TEST_SCRIPT_MISMATCH');
+      return;
+    }
+    CrmGateway.authorize(props,Session);
+    var expectedIdHash='4beceb3a77dc0f78da84a4624fa646c3403dcfe0bb90c06a559d1e6074c35656';
+    var configuredId=props.getProperty('CRM_SPREADSHEET_ID');
+    if(!configuredId||crmHash_(configuredId)!==expectedIdHash) {
+      console.log('CRM_BACKUP_RESTORE_FAILED; code=TEST_SHEET_MISMATCH');
+      return;
+    }
+    // Заявляємо виконання до створення файлів, щоб помилка Google не призвела
+    // до другого непомітного набору файлів під час випадкового повторного Run.
+    var guard=LockService.getScriptLock();
+    if(!guard.tryLock(10000)) {
+      console.log('CRM_BACKUP_RESTORE_FAILED; code=BUSY');
+      return;
+    }
+    try {
+      if(props.getProperty(claimKey)) {
+        console.log('CRM_BACKUP_RESTORE_ALREADY_CLAIMED; newFiles=0');
+        return;
+      }
+      props.setProperty(claimKey,'CLAIMED');
+      claimed=true;
+    }finally {guard.releaseLock();}
+    var source=SpreadsheetApp.create('CRM_1_4_BACKUP_SYNTHETIC_SOURCE_'+Utilities.getUuid().slice(0,8));
+    props.setProperty(claimKey+'_SOURCE_ID',source.getId());
+    var target=SpreadsheetApp.create('CRM_1_4_RESTORE_SYNTHETIC_TARGET_'+Utilities.getUuid().slice(0,8));
+    props.setProperty(claimKey+'_TARGET_ID',target.getId());
+    var makeRepo=function(sheet) {
+      return new CrmSheets.SheetsRepository({
+        spreadsheet:sheet,
+        lock:LockService.getScriptLock(),
+        hash:crmHash_,
+        flush:function(){SpreadsheetApp.flush();}
+      });
+    };
+    var sourceRepo=makeRepo(source),targetRepo=makeRepo(target);
+    sourceRepo.setup();sourceRepo.migrate12(0,true);
+    targetRepo.setup();targetRepo.migrate12(0,true);
+    var srcService=new CrmCore.CrmService(sourceRepo,function(){return Utilities.getUuid();});
+    var client=srcService.saveClient({
+      legal_name:'CRM 1.4 СИНТЕТИЧНА ОРГАНІЗАЦІЯ ДЛЯ BACKUP',
+      type:'ngo',status:'active'
+    });
+    srcService.saveApplication({
+      client_id:client.id,
+      title:'CRM 1.4 СИНТЕТИЧНА ЗАЯВКА BACKUP',
+      donor:'СИНТЕТИЧНИЙ ДОНОР',
+      grant:'СИНТЕТИЧНИЙ КОНКУРС',
+      status:'preparation',currency:'EUR',amount:123.45
+    });
+    // snapshot містить ТІЛЬКИ створені зараз вигадані записи; нікуди не виводимо.
+    var snapshot=sourceRepo.snapshot();
+    var original=JSON.parse(snapshot);
+    if(original.modelVersion!==12||original.clients.length!==1||
+       original.applications.length!==1||original.applications[0].amount!==123.45)
+      throw Error('BACKUP_SOURCE_INVALID');
+    var targetService=new CrmCore.CrmService(targetRepo,function(){return Utilities.getUuid();});
+    targetService.saveClient({
+      legal_name:'CRM 1.4 СИНТЕТИЧНИЙ ТИМЧАСОВИЙ ЗАПИС',
+      type:'ngo',status:'potential'
+    });
+    var before=targetRepo.read();
+    if(before.clients.length!==1||before.clients[0].id===client.id)
+      throw Error('BACKUP_TARGET_INVALID');
+    targetRepo.restore(snapshot);
+    var restored=targetRepo.read();
+    if(restored.modelVersion!==12||restored.clients.length!==1||
+       restored.applications.length!==1||restored.clients[0].id!==client.id||
+       restored.applications[0].client_id!==client.id||
+       restored.applications[0].amount!==123.45||
+       restored.clients[0].legal_name!==original.clients[0].legal_name||
+       restored.clients[0].version<=original.clients[0].version)
+      throw Error('BACKUP_RESTORE_MISMATCH');
+    // Строга перевірка: відновлення іншої таблиці не торкнулося джерела.
+    var unchanged=sourceRepo.snapshot();
+    if(crmHash_(unchanged)!==crmHash_(snapshot))throw Error('BACKUP_SOURCE_CHANGED');
+    // Перевіряємо захист після відновлення: confirmed journal = projections.
+    if(!restored.revision||targetRepo.control().pending)
+      throw Error('BACKUP_CONTROL_INVALID');
+    props.setProperty(claimKey,'DONE');
+    console.log('CRM_BACKUP_RESTORE_OK; scratchFiles=2; model=12; clients=1; applications=1; sourceUnchanged=1; originalTestSheetWrites=0; productionWrites=0; calendarEvents=0');
+  }catch(error) {
+    if(claimed) {
+      try {props.setProperty(claimKey,'CHECK_MANUALLY');}catch(ignored){}
+    }
+    // Ні source/target IDs, ні сирих клієнтських рядків або помилок Google в лог.
+    console.log('CRM_BACKUP_RESTORE_FAILED; code=CHECK_MANUALLY; noAutomaticRetry=1');
+  }
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
