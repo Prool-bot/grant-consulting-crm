@@ -188,6 +188,55 @@ function verifyCrmTestSheetConnection() {
     console.log('CRM_TEST_SHEET_FAILED; code=UNAVAILABLE');
   }
 }
+// Ручне read-only приймання цілісності ТІЛЬКИ погодженої тестової БД.
+// На відміну від repository.read(), тут ніколи не викликаємо recover():
+// pending-транзакція має блокувати перевірку, а не запускати запис/відновлення.
+function verifyCrmTestDatabaseIntegrity() {
+  var props=PropertiesService.getScriptProperties();
+  try {
+    // Незалежний захист від запуску в іншому, зокрема production, Apps Script.
+    var expectedScriptHash='57ce0d272f5a4fd0ad8ebf73376f96601ddddb3623f43dd80fe6f2f171be0f7f';
+    if(crmHash_(ScriptApp.getScriptId())!==expectedScriptHash) {
+      console.log('CRM_TEST_INTEGRITY_FAILED; code=TEST_SCRIPT_MISMATCH');
+      return;
+    }
+    CrmGateway.authorize(props,Session);
+    var id=props.getProperty('CRM_SPREADSHEET_ID');
+    var expectedIdHash='4beceb3a77dc0f78da84a4624fa646c3403dcfe0bb90c06a559d1e6074c35656';
+    if(!id||crmHash_(id)!==expectedIdHash) {
+      console.log('CRM_TEST_INTEGRITY_FAILED; code=TEST_SHEET_MISMATCH');
+      return;
+    }
+    var repository=new CrmSheets.SheetsRepository({
+      spreadsheet:SpreadsheetApp.openById(id),
+      lock:LockService.getScriptLock(),
+      hash:crmHash_,
+      // Захист на рівні адаптера: навіть якщо помилково викличуть write path,
+      // flush буде заборонено. Нормальний read-only шлях flush не викликає.
+      flush:function(){throw Error('READ_ONLY_FLUSH_FORBIDDEN');}
+    });
+    var outcome='UNAVAILABLE';
+    repository.locked(function() {
+      var control=repository.control();
+      if(control.pending) {outcome='PENDING_TRANSACTION';return;}
+      if(!control.committed) {outcome='NO_COMMITTED_JOURNAL';return;}
+      if(control.schema!==2) {outcome='SCHEMA_MISMATCH';return;}
+      var state;
+      try {state=repository.journal(control.committed);}
+      catch(error) {outcome='JOURNAL_INVALID';return;}
+      if(state.modelVersion!==12) {outcome='SCHEMA_MISMATCH';return;}
+      try {repository.verifyProjection(state);}
+      catch(error) {outcome='PROJECTION_MISMATCH';return;}
+      outcome='OK';
+    });
+    if(outcome==='OK')
+      console.log('CRM_TEST_INTEGRITY_OK; schema=2; model=12; projectionTabs=9; dataLogged=0; writes=0');
+    else console.log('CRM_TEST_INTEGRITY_FAILED; code='+outcome);
+  }catch(error) {
+    // Не журналювати приватні дані, журнал транзакцій або сирі помилки Google.
+    console.log('CRM_TEST_INTEGRITY_FAILED; code=UNAVAILABLE');
+  }
+}
 function crmCalendarSync() {
   return crmSafe_(function() {
     var calendar=crmOwnedCalendar_();
