@@ -1,0 +1,84 @@
+name: CRM 1.4 — незалежна read-only перевірка production deployment
+
+on:
+  push:
+    branches: [codex/crm-1-4-workflow-upgrade]
+    paths:
+      - .github/workflows/apps-script-production-verify.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: >-
+      ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: verify CRM 1.4 production deployment') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: crm-staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Verify pin and stage private clasp credentials
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CRM_PRODUCTION_SCRIPT_ID: ${{ secrets.CRM_PRODUCTION_SCRIPT_ID }}
+          CRM_STAGING_SCRIPT_ID: ${{ secrets.CRM_STAGING_SCRIPT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          node <<'NODE'
+          const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
+          const pid=(process.env.CRM_PRODUCTION_SCRIPT_ID||'').trim(),sid=(process.env.CRM_STAGING_SCRIPT_ID||'').trim();
+          if(!pid||!sid||pid===sid||crypto.createHash('sha256').update(pid).digest('hex')!=='a15df15bd699dd97b75f96d200ece8705f703d9196edfda0ec887dc005e49890')
+            throw Error('Script ID pins invalid');
+          const credentials=process.env.CLASPRC_JSON||'';
+          let parsed;try{parsed=JSON.parse(credentials)}catch{throw Error('OAuth unavailable');}
+          if(!parsed.tokens&&!parsed.token)throw Error('OAuth unavailable');
+          fs.writeFileSync(path.join(os.homedir(),'.clasprc.json'),credentials,{mode:0o600});
+          fs.writeFileSync('.clasp.json',JSON.stringify({scriptId:pid,rootDir:'dist/apps-script'}),{mode:0o600});
+          console.log('CRM14_PRODUCTION_VERIFY_PIN_OK');
+          NODE
+      - name: Read back existing deployments without edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          if ! npm exec --yes --package=@google/clasp@3.4.1 -- clasp list-deployments >"${RUNNER_TEMP}/crm14-verify.txt" 2>"${RUNNER_TEMP}/clasp-errors.txt"; then
+            echo 'CRM14_DEPLOY_VERIFY_FAILED; code=LIST_UNAVAILABLE'
+            exit 1
+          fi
+          node <<'NODE'
+          const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:path');
+          const raw=fs.readFileSync(path.join(process.env.RUNNER_TEMP,'crm14-verify.txt'),'utf8');
+          const rows=[...raw.matchAll(/([A-Za-z0-9_-]{30,})\s*@(HEAD|\d+)/g)].map(x=>({id:x[1],version:x[2]}));
+          const h='98f3c3a8a1e30da116f74965d4c3ef6f2f92609acdad7cb83fe35a6204e2f38f';
+          const expected=rows.filter(r=>crypto.createHash('sha256').update(r.id.slice(0,21)).digest('hex')===h);
+          if(expected.length!==1) {
+            console.log('CRM14_DEPLOY_VERIFY_FAILED; code=TARGET_AMBIGUOUS; parsed='+rows.length+'; pinned='+expected.length);
+            process.exit(1);
+          }
+          const version=expected[0].version;
+          if(!/^\d+$/.test(version)||Number(version)<=6) {
+            console.log('CRM14_DEPLOY_VERIFY_FAILED; code=VERSION_NOT_UPDATED; observedVersion='+version+'; parsed='+rows.length);
+            process.exit(1);
+          }
+          if(rows.length!==2||rows.filter(r=>r.version==='HEAD').length!==1) {
+            console.log('CRM14_DEPLOY_VERIFY_FAILED; code=DEPLOYMENT_LIST_UNEXPECTED; count='+rows.length);
+            process.exit(1);
+          }
+          console.log('CRM14_DEPLOY_VERIFIED; previousVersion=6; newVersion='+version+'; sameDeployment=1; deploymentCount=2; noAdditionalDeployments=1');
+          NODE
+      - name: Delete private files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.clasprc.json" ".clasp.json" "${RUNNER_TEMP}/crm14-verify.txt" "${RUNNER_TEMP}/clasp-errors.txt"
