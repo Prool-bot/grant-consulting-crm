@@ -109,3 +109,24 @@ test('Apps Script crmMutate без календарної дії не потре
  assert.equal(result.value,'synthetic-ok');
  assert.equal(writes,1);
 });
+
+test('Calendar: read-only smoke-check Стамбула перевіряє UTC без Google API',()=>{
+ const logs=[];
+ context.console={log:line=>logs.push(String(line))};
+ assert.equal(typeof context.CalendarApp,'undefined');
+ assert.equal(typeof context.SpreadsheetApp,'undefined');
+ vm.runInContext('verifyCrmIstanbulTime()',context);
+ assert.deepEqual(logs,[
+  'CRM_ISTANBUL_CLOCK_OK; zone=Europe/Istanbul; 10:00=07:00Z; samples=3; eventsCreated=0'
+ ]);
+});
+
+test('Calendar: невдала перевірка Стамбула не створює подій і не виводить виняток',()=>{
+ const logs=[];
+ context.console={log:line=>logs.push(String(line))};
+ const original=context.Utilities.parseDate;
+ context.Utilities.parseDate=()=>{throw Error('Synthetic private error');};
+ try {vm.runInContext('verifyCrmIstanbulTime()',context);}
+ finally {context.Utilities.parseDate=original;}
+ assert.deepEqual(logs,['CRM_ISTANBUL_CLOCK_FAILED; case=runtime']);
+});
