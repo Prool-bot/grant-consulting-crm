@@ -101,6 +101,12 @@ function verifyCrmCalendarAccess() {
   if(result.ok===true&&result.value&&result.value.ready===true) {
     console.log('CRM_CALENDAR_CHECK_OK; primary='+String(result.value.primary===true)+
       '; timeZone='+String(result.value.timeZone||''));
+    // Доступ підтверджено, але часовий пояс основного календаря може відрізнятися
+    // від Europe/Kyiv, у якому CRM інтерпретує дату й годину нагадувань.
+    // Не змінюємо налаштування особистого календаря автоматично.
+    if(result.value.timeZone!=='Europe/Kyiv')
+      console.log('CRM_CALENDAR_TIMEZONE_WARNING; crmTimeZone=Europe/Kyiv; calendarTimeZone='+
+        String(result.value.timeZone||'UNKNOWN'));
   } else {
     // Ніколи не журналюємо OAuth-токени, власника або сирі Google-помилки.
     console.log('CRM_CALENDAR_CHECK_FAILED; code='+String(result.code||'UNAVAILABLE'));
