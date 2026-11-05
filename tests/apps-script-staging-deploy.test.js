@@ -28,3 +28,14 @@ test('CRM 1.4: OAuth-файли не можуть потрапити в Git ко
   assert.match(ignore,/^\.clasprc\.json$/m);
   assert.match(ignore,/^dist\/$/m);
 });
+
+test('CRM 1.4: production workflow вимагає явної релізної умови',()=>{
+ const file=fs.readFileSync('.github/workflows/apps-script-production-stage.yml','utf8');
+ assert.match(file,/^  push:$/m);
+ assert.match(file,/^      - \.github\/workflows\/apps-script-production-stage\.yml$/m);
+ assert.match(file,/startsWith\(github\.event\.head_commit\.message, 'release: stage CRM 1\.4 production source'\)/);
+ assert.match(file,/environment: crm-staging/);
+ assert.match(file,/node scripts\/verify-cloud-release\.js/);
+ assert.match(file,/clasp push --force/);
+ assert.doesNotMatch(file,/^\s*(schedule|workflow_dispatch|pull_request_target):\s*$/m);
+});
