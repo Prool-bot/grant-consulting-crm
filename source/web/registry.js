@@ -16,7 +16,7 @@ function registry() {
     </div>
     <div class="registry-title"><h1>Реєстр грантових заявок</h1><span id="application-count" role="status"></span></div>
     <p class="sr-only" id="table-help">Натисніть заголовок стовпця для сортування. На вузькому екрані прокручуйте таблицю горизонтально.</p>
-    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption class="sr-only">Грантові заявки</caption><thead></thead><tbody id="application-rows"></tbody></table></div><p class="registry-note">${globalThis.CRM_REMOTE?'CRM 1.2 · Google Sheets · доступ лише власнику':'Локальна демонстрація · лише вигадані дані'}</p>`;
+    <div class="table-scroll" role="region" aria-label="Таблиця заявок" aria-describedby="table-help" tabindex="0"><table class="registry-table"><caption class="sr-only">Грантові заявки</caption><thead></thead><tbody id="application-rows"></tbody></table></div><p class="registry-note">${globalThis.CRM_REMOTE?'CRM 1.4 · Google Sheets · доступ лише власнику':'Локальна демонстрація · лише вигадані дані'}</p>`;
   const query = document.querySelector('#application-query'), client = document.querySelector('#application-client'), status = document.querySelector('#application-status'), group = document.querySelector('#application-group');
   query.value = registryState.query; client.value = registryState.clientId; status.value = registryState.status; group.checked = registryState.grouped;
   const toggle = document.querySelector('#filter-toggle'), panel = document.querySelector('#application-filters');
