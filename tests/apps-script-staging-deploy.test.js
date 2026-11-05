@@ -10,7 +10,9 @@ test('CRM 1.4: тестове розгортання тільки вручну, 
   assert.doesNotMatch(file,/^\s*(schedule|pull_request_target):\s*$/m);
   assert.match(file,/github\.ref == 'refs\/heads\/codex\/crm-1-4-workflow-upgrade'/);
   assert.match(file,/startsWith\(github\.event\.head_commit\.message, 'staging: run CRM 1\.4'\)/);
-  assert.match(file,/staging !== '1W8K0pLrQuD6kj6Ocx3Osfhv79BxVPmI6IO7Nm2LULrswqZq0o5XaKl8x'/);
+  assert.match(file,/expectedStagingHash='[a-f0-9]{64}'/);
+  assert.match(file,/crypto\.createHash\('sha256'\)\.update\(staging\)\.digest\('hex'\)!==expectedStagingHash/);
+  assert.doesNotMatch(file,/staging\s*!==\s*['\"][A-Za-z0-9_-]{20,}['\"]/);
   assert.match(file,/environment: crm-staging/);
   assert.match(file,/CRM_STAGING_SCRIPT_ID/);
   assert.match(file,/CRM_PRODUCTION_SCRIPT_ID/);
