@@ -75,7 +75,7 @@ test('WebApp: head test route is private, with no production deployment or clien
 test('WebApp: remote client starts with bootstrap, not browser demo or writes',async()=>{
  const src=read('source/web/remote.js');
  assert.match(src,/action:'bootstrap'/);
- assert.match(src,/\['crmQuery'\]/);
+ assert.match(src,/this\.call\('crmQuery',\{action:'bootstrap'/);
  assert.match(src,/withSuccessHandler/);
  const ctx=vm.createContext({
   CrmCore:{LocalRepository:class{},CrmService:class{}},
