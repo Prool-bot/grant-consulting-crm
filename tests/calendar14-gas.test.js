@@ -78,6 +78,7 @@ test('Apps Script: read-only preflight перевіряє основний ка�
  assert.equal(result.value.ready,true);
  assert.equal(result.value.primary,true);
  assert.equal(result.value.timeZone,'Europe/Kyiv');
+ assert.equal(result.value.crmTimeZone,'Europe/Istanbul');
  assert.equal(calls.default,1);
  assert.equal(calls.byId,0);
  assert.equal(calls.sync,0);
