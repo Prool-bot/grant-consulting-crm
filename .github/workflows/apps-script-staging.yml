@@ -1,17 +1,12 @@
 name: CRM 1.4 — Apps Script тестове оновлення
 
-# Лише ручний запуск після налаштування окремого тестового Apps Script.
-# ЖОДНИХ автоматичних записів у production CRM 1.3.
+# Явний запуск на робочій гілці, поки PR на прийманні.
 on:
-  workflow_dispatch:
-    inputs:
-      confirm_staging:
-        description: 'Виберіть STAGING_ONLY, щоб підтвердити оновлення тільки тестового Script-проєкту'
-        type: choice
-        required: true
-        options:
-          - DO_NOT_DEPLOY
-          - STAGING_ONLY
+  push:
+    branches:
+      - codex/crm-1-4-workflow-upgrade
+    paths:
+      - .github/workflows/apps-script-staging.yml
 
 permissions:
   contents: read
@@ -23,7 +18,7 @@ concurrency:
 jobs:
   staging:
     name: Перевірка та оновлення ТІЛЬКИ тестового Apps Script
-    if: ${{ github.event.inputs.confirm_staging == 'STAGING_ONLY' && github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/crm-1-4-workflow-upgrade' && startsWith(github.event.head_commit.message, 'staging: run CRM 1.4') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: crm-staging
@@ -56,7 +51,11 @@ jobs:
           const credentials=process.env.CLASPRC_JSON||'';
           const staging=(process.env.CRM_STAGING_SCRIPT_ID||'').trim();
           const production=(process.env.CRM_PRODUCTION_SCRIPT_ID||'').trim();
-          if(!credentials||!staging||!production)throw Error('Не встановлено захищені секрети для staging.');
+          if (!staging || !production) throw Error('Не встановлено Script ID у crm-staging.');
+          if (staging !== '1W8K0pLrQuD6kj6Ocx3Osfhv79BxVPmI6IO7Nm2LULrswqZq0o5XaKl8x') {
+            throw Error('CRM_STAGING_SCRIPT_ID не відповідає погодженому тестовому проєкту.');
+          }
+          if (!credentials) throw Error('Відсутній CLASPRC_JSON у crm-staging.');
           if(staging===production)throw Error('ЗАБОРОНЕНО: тестовий Script ID збігається з production!');
           try {JSON.parse(credentials);}catch{throw Error('Некоректний формат захищеної авторизації clasp.');}
           if(!/^[a-zA-Z0-9_-]{20,}$/.test(staging)||!/^[a-zA-Z0-9_-]{20,}$/.test(production))throw Error('Некоректний Script ID.');
@@ -65,9 +64,15 @@ jobs:
           process.stdout.write('Тестовий Script ID підтверджено як відмінний від production.\n');
           NODE
       - name: Завантажити код лише в тестовий Apps Script (без публікації)
-        run: npm exec --yes --package=@google/clasp@3.4.1 -- clasp push --force
+        shell: bash
+        run: |
+          if ! npm exec --yes --package=@google/clasp@3.4.1 -- clasp push --force >"${RUNNER_TEMP}/crm-clasp.log" 2>&1; then
+            echo 'clasp push завершився помилкою. Перевірте OAuth і право редагування тестового проєкту.'
+            exit 1
+          fi
+          echo 'Код завантажено в тестовий Apps Script.'
       - name: Видалити тимчасові облікові файли
         if: always()
         shell: bash
         run: |
-          rm -f "$HOME/.clasprc.json" ".clasp.json"
+          rm -f "$HOME/.clasprc.json" ".clasp.json" "${RUNNER_TEMP}/crm-clasp.log"
