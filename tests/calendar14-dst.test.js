@@ -76,7 +76,7 @@ test('Apps Script crmMutate відхиляє неоднозначну дату �
   const result=context.crmMutate(input(date,time));
   assert.equal(result.ok,false);
   assert.equal(result.code,'CALENDAR_INVALID_TIME');
-  assert.match(result.message,/Виберіть іншу годину/);
+  assert.match(result.message,/Перевірте введені дані/);
  }
  assert.equal(repositories,0);
  assert.equal(writes,0);
